@@ -4,15 +4,22 @@ RPi part of the infamous ROBOT NA KOLYOSEEKAKH project.
 
 A Raspberry Pi service that controls a **motorized 3-wheeled platform**
 (2 independently driven wheels + 1 free-rolling caster wheel) through an
-**L298N dual H-bridge motor driver module**.
+**L298N dual H-bridge motor driver module**, and acts as a **control proxy**
+for a separate **ONVIF/RTSP IP camera** (pan/tilt/zoom + JPEG snapshots).
 
 The service exposes a small HTTP API:
 
-| Method | Path             | Description                                                        |
-|--------|------------------|--------------------------------------------------------------------|
-| POST   | `/rnk/schedule`  | Enqueue a command: `{"move": <cm>}` or `{"rotate": <deg>}`         |
-| GET    | `/rnk/schedule`  | Inspect the queue (running + pending commands)                     |
-| POST   | `/rnk/stop`      | Halt the motors immediately and clear the queue                    |
+| Method | Path                    | Description                                                  |
+|--------|-------------------------|---------------------------------------------------------------|
+| POST   | `/rnk/schedule`         | Enqueue a command: `{"move": <cm>}` or `{"rotate": <deg>}`    |
+| GET    | `/rnk/schedule`         | Inspect the queue (running + pending commands)                |
+| POST   | `/rnk/stop`             | Halt the motors immediately and clear the queue                |
+| POST   | `/rnk/camera/ptz/absolute` | Move the camera to an absolute pan/tilt/zoom position       |
+| POST   | `/rnk/camera/ptz/relative` | Move the camera by a pan/tilt/zoom delta                    |
+| POST   | `/rnk/camera/ptz/stop`  | Stop any in-progress camera movement                           |
+| POST   | `/rnk/camera/home`      | Reset the camera to its home/center position                   |
+| GET    | `/rnk/camera/status`    | Current camera PTZ position + capabilities                     |
+| GET    | `/rnk/camera/snapshot`  | Capture a single JPEG frame from the camera's RTSP stream       |
 
 Commands are executed **strictly one by one**, in the order received, by a
 single worker thread. After every command the motors are stopped, so the
@@ -51,6 +58,9 @@ see [Calibration](#calibration) before first use.
 * Motor power supply: **7–12 V** (e.g. 2× AA NiMH pack or a 7.4 V Li-ion
   pack) — **do not** power the motors from the Pi's 5 V rail
 * 3-wheeled chassis with a free-rolling caster wheel
+* An ONVIF-compatible PTZ IP camera on the same network, reachable from the
+  Pi over HTTP (ONVIF control) and RTSP (video) — connected over Wi-Fi/PoE,
+  not wired to the Pi's GPIO
 
 ### Wiring
 
@@ -91,6 +101,11 @@ cd rnk-rpi
 
 The service binds to `0.0.0.0:5000` (configurable in `app/config.py`), so
 you can command the robot from any device on the local network.
+
+`setup.sh` also installs `ffmpeg` (used to grab camera snapshots) and
+creates a `.env` file from `.env.example` if one doesn't already exist —
+edit it with the camera's real IP address and credentials (see
+[Camera control](#camera-control)) and restart the service.
 
 ### Service management
 
@@ -177,6 +192,124 @@ curl -X POST http://<pi-ip>:5000/rnk/stop
 
 Stops the currently running command within ~50 ms and discards all pending
 commands. Response: `{"status": "stopped", "cleared": 2}`.
+
+## Camera control
+
+The Pi acts as a **control proxy** for a separate ONVIF/RTSP IP camera: it
+is not wired to the Pi at all, just reachable on the same network. The
+service talks **ONVIF** (SOAP over HTTP) to the camera for pan/tilt/zoom
+control, and shells out to **ffmpeg** to grab single JPEG frames from its
+**RTSP** video stream.
+
+### Configuration (`.env`)
+
+The camera's IP address and credentials are read from a `.env` file at the
+repo root (never committed — see `.gitignore`). Copy the template and edit
+it:
+
+```bash
+cp .env.example .env
+```
+
+| Variable                 | Default     | Description                                      |
+|---------------------------|-------------|---------------------------------------------------|
+| `CAMERA_IP`               | *(required)*| Camera's IP address. If unset, all `/rnk/camera/*` endpoints return `503`. |
+| `CAMERA_ONVIF_PORT`       | `80`        | ONVIF (SOAP/HTTP) port                             |
+| `CAMERA_USERNAME`         | *(empty)*   | ONVIF/RTSP username                                |
+| `CAMERA_PASSWORD`         | *(empty)*   | ONVIF/RTSP password                                |
+| `CAMERA_ONVIF_TIMEOUT_S`  | `5`         | Timeout for ONVIF SOAP calls                       |
+| `CAMERA_RTSP_URL`         | *(built from the vars below)* | Full RTSP URL override, e.g. `rtsp://user:pass@ip:554/stream1` |
+| `CAMERA_RTSP_PORT`        | `554`       | RTSP port (used only if `CAMERA_RTSP_URL` is unset)|
+| `CAMERA_RTSP_PATH`        | `stream1`   | RTSP path (used only if `CAMERA_RTSP_URL` is unset)|
+
+After editing `.env`: `./scripts/rnk-rpi restart`.
+
+### Pan/tilt/zoom coordinates
+
+Pan/tilt/zoom use ONVIF's normalized **generic PTZ space**, since every
+ONVIF PTZ camera supports it (camera-specific degree/mm spaces often
+aren't exposed):
+
+* **pan**, **tilt**: `-1.0` to `1.0` (one extreme to the other; `0.0` is center)
+* **zoom**: `0.0` (wide) to `1.0` (tele)
+
+Whether **absolute** moves are supported depends on the camera; if not,
+use **relative** moves instead (deltas in the same `-1.0..1.0` range).
+Check `GET /rnk/camera/status` → `capabilities` to see what your camera
+supports. A `501` is returned if you call an unsupported operation.
+
+### `POST /rnk/camera/ptz/absolute`
+
+```bash
+curl -X POST http://<pi-ip>:5000/rnk/camera/ptz/absolute \
+  -H 'Content-Type: application/json' \
+  -d '{"pan": 0.5, "tilt": -0.2, "zoom": 0.3}'
+```
+
+`zoom` is optional. Response `200`: `{"status": "ok", "pan": 0.5, "tilt": -0.2, "zoom": 0.3}`.
+
+### `POST /rnk/camera/ptz/relative`
+
+Same body shape, but values are **deltas** from the current position:
+
+```bash
+curl -X POST http://<pi-ip>:5000/rnk/camera/ptz/relative \
+  -H 'Content-Type: application/json' \
+  -d '{"pan": -0.1, "tilt": 0.1}'
+```
+
+### `POST /rnk/camera/ptz/stop`
+
+```bash
+curl -X POST http://<pi-ip>:5000/rnk/camera/ptz/stop
+```
+
+Stops any in-progress pan/tilt/zoom movement.
+
+### `POST /rnk/camera/home`
+
+```bash
+curl -X POST http://<pi-ip>:5000/rnk/camera/home
+```
+
+Resets pan/tilt to the camera's home/central position: uses the ONVIF
+`GotoHomePosition` preset if the camera has one, otherwise falls back to
+an absolute move to pan=0/tilt=0. Returns `501` if neither is supported.
+
+### `GET /rnk/camera/status`
+
+```bash
+curl http://<pi-ip>:5000/rnk/camera/status
+```
+
+```json
+{
+  "pan": 0.5,
+  "tilt": -0.2,
+  "zoom": 0.3,
+  "moving": false,
+  "capabilities": {"absolute": true, "relative": true, "home": true}
+}
+```
+
+### `GET /rnk/camera/snapshot`
+
+Captures a single JPEG frame from the RTSP stream.
+
+```bash
+# Full resolution
+curl http://<pi-ip>:5000/rnk/camera/snapshot -o frame.jpg
+
+# Scaled down to 640x480
+curl 'http://<pi-ip>:5000/rnk/camera/snapshot?scaled=true' -o frame.jpg
+```
+
+Returns `200` with `Content-Type: image/jpeg` on success, or `502` (JSON
+error body) if ffmpeg couldn't pull a frame (camera offline, wrong
+credentials, stream timeout, etc).
+
+All `/rnk/camera/*` endpoints return `503` if no camera is configured
+(`CAMERA_IP` unset in `.env`).
 
 ## Calibration
 

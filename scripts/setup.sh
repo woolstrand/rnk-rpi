@@ -3,8 +3,9 @@
 # One-shot setup for the rnk-rpi project on a Raspberry Pi.
 #
 # What it does:
-#   1. Installs system dependencies (python3-venv, python3-pip)
-#   2. Creates a .venv virtualenv in the project root and installs requirements
+#   1. Installs system dependencies (python3-venv, python3-pip, ffmpeg)
+#   2. Creates a .venv virtualenv in the project root and installs requirements,
+#      and creates .env from .env.example if missing (camera IP/credentials)
 #   3. Adds the current user to the "gpio" group (required for /dev/gpiomem)
 #   4. Installs the rnk-rpi systemd service (enabled + started)
 #
@@ -35,6 +36,14 @@ else
     echo "==> python3 already present"
 fi
 
+if ! command -v ffmpeg >/dev/null; then
+    echo "==> Installing ffmpeg (needed for camera snapshot capture)"
+    sudo apt-get update
+    sudo apt-get install -y ffmpeg
+else
+    echo "==> ffmpeg already present"
+fi
+
 # ---------------------------------------------------------------------------
 # 2. Virtualenv + Python dependencies
 # ---------------------------------------------------------------------------
@@ -45,6 +54,11 @@ fi
 echo "==> Installing Python requirements"
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install -r requirements.txt
+
+if [ ! -f .env ]; then
+    echo "==> Creating .env from .env.example (edit it with your camera's IP/credentials)"
+    cp .env.example .env
+fi
 
 # ---------------------------------------------------------------------------
 # 3. GPIO group membership (needed to access /dev/gpiomem)
@@ -104,5 +118,7 @@ echo "  * Follow logs:       ./scripts/rnk-rpi logs"
 echo "  * Try the API:       curl -X POST http://localhost:5000/rnk/schedule \\"
 echo "                        -H 'Content-Type: application/json' -d '{\"move\": 5}'"
 echo "  * Calibrate:         edit app/motor/constants.py (see README, 'Calibration')"
+echo "  * Camera:            edit .env with the camera's IP/credentials, then"
+echo "                        ./scripts/rnk-rpi restart (see README, 'Camera control')"
 echo
 echo "The service starts automatically at boot (systemd, WantedBy=multi-user.target)."
