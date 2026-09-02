@@ -94,16 +94,24 @@ you can command the robot from any device on the local network.
 
 ### Service management
 
+`setup.sh` also installs a sudoers drop-in that lets your user run the
+service's `systemctl`/`journalctl` commands **without a password prompt**.
+Use the `scripts/rnk-rpi` wrapper for this:
+
 ```bash
-systemctl status rnk-rpi          # is it running?
-journalctl -u rnk-rpi -f          # live logs
-sudo systemctl restart rnk-rpi    # after editing code/constants
-sudo systemctl stop rnk-rpi       # stop the service (motors halt)
+./scripts/rnk-rpi status          # is it running?
+./scripts/rnk-rpi logs            # live logs (Ctrl-C to stop)
+./scripts/rnk-rpi logs-once       # last 50 log lines
+./scripts/rnk-rpi restart         # after editing code/constants
+./scripts/rnk-rpi stop            # stop the service (motors halt)
 ```
 
+(Plain `systemctl`/`sudo systemctl` still work too, but may prompt for a
+password since they aren't covered by the sudoers rule.)
+
 The service restarts automatically on crash (`Restart=always`) and starts
-on boot. On any shutdown the driver is cleaned up, so the motors are never
-left energized.
+automatically on boot (`systemctl enable`, done by `setup.sh`). On any
+shutdown the driver is cleaned up, so the motors are never left energized.
 
 ## API reference
 
@@ -189,7 +197,7 @@ with **placeholder values**. Before trusting the robot, calibrate:
    adjust `MOTOR_RPM` (or `DEFAULT_SPEED`) until the error is within ~10%.
    Do the same for a 360° rotation.
 
-After editing constants: `sudo systemctl restart rnk-rpi`.
+After editing constants: `./scripts/rnk-rpi restart`.
 
 ## Project layout
 
@@ -205,8 +213,10 @@ After editing constants: `sudo systemctl restart rnk-rpi`.
 │       ├── driver.py        # L298N GPIO control (PWM + direction)
 │       └── kinematics.py    # cm/deg → seconds conversions
 ├── scripts/
-│   ├── setup.sh             # one-shot Pi setup (deps, venv, systemd)
-│   └── rnk-rpi.service      # systemd unit template
+│   ├── setup.sh             # one-shot Pi setup (deps, venv, systemd, sudoers)
+│   ├── rnk-rpi              # passwordless start/stop/restart/status/logs wrapper
+│   ├── rnk-rpi.service      # systemd unit template
+│   └── rnk-rpi.sudoers      # sudoers drop-in template (passwordless systemctl)
 ├── tests/                   # pytest suite (runs without hardware)
 └── requirements.txt
 ```
@@ -241,7 +251,7 @@ The tests use a fake motor driver, so no GPIO hardware is needed.
   driver can be ported to `lgpio` (a drop-in replacement with the same
   pin semantics); the rest of the code is unaffected.
 * **Port already in use** — change `PORT` in `app/config.py`, then
-  `sudo systemctl restart rnk-rpi`.
+  `./scripts/rnk-rpi restart`.
 
 ## Security note
 

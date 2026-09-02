@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+#
+# rnk-rpi service control wrapper.
+#
+# Start/stop/restart/status the rnk-rpi systemd service WITHOUT typing a
+# sudo password. setup.sh installs a sudoers drop-in (/etc/sudoers.d/rnk-rpi)
+# that grants passwordless access to exactly the systemctl/journalctl
+# commands used below, so `sudo` never prompts for a password.
+#
+# Usage:
+#   ./scripts/rnk-rpi start        start the service
+#   ./scripts/rnk-rpi stop         stop the service
+#   ./scripts/rnk-rpi restart      restart the service
+#   ./scripts/rnk-rpi status       show service status
+#   ./scripts/rnk-rpi logs         follow the logs (Ctrl-C to stop)
+#   ./scripts/rnk-rpi logs-once    show the last 50 log lines
+#   ./scripts/rnk-rpi enable       enable at boot (idempotent)
+#   ./scripts/rnk-rpi disable      disable at boot
+#
+set -eu
+
+SERVICE="rnk-rpi"
+SUDO="sudo"
+
+usage() {
+    cat <<'EOF'
+rnk-rpi service control (passwordless)
+
+  start        start the service
+  stop         stop the service
+  restart      restart the service
+  status       show service status
+  logs         follow the logs (Ctrl-C to stop)
+  logs-once    show the last 50 log lines
+  enable       enable at boot (idempotent)
+  disable      disable at boot
+EOF
+}
+
+cmd="${1:-status}"
+
+case "$cmd" in
+    start|stop|restart|reload|enable|disable|status|is-active|is-enabled)
+        $SUDO systemctl "$cmd" "$SERVICE"
+        ;;
+    logs|log|follow)
+        $SUDO journalctl -u "$SERVICE" -f --no-pager
+        ;;
+    logs-once|recent)
+        $SUDO journalctl -u "$SERVICE" --no-pager -n 50
+        ;;
+    help|-h|--help)
+        usage
+        ;;
+    *)
+        echo "Unknown command: $cmd" >&2
+        echo >&2
+        usage >&2
+        exit 2
+        ;;
+esac

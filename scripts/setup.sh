@@ -60,7 +60,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 4. systemd service
+# 4. systemd service (auto-starts at boot, runs as the current user)
 # ---------------------------------------------------------------------------
 echo "==> Installing systemd service"
 sed -e "s|__PROJECT_DIR__|${PROJECT_DIR}|g" \
@@ -70,12 +70,39 @@ sudo systemctl daemon-reload
 sudo systemctl enable rnk-rpi
 sudo systemctl restart rnk-rpi
 
+# ---------------------------------------------------------------------------
+# 5. Passwordless service control (sudoers drop-in + wrapper script)
+# ---------------------------------------------------------------------------
+echo "==> Installing passwordless service control"
+
+# 5a. sudoers drop-in: lets the user run the exact systemctl/journalctl
+#     commands in scripts/rnk-rpi without a password. Validate before
+#     installing so a typo can never break the user's sudo access.
+SUDOERS_SRC="$(mktemp)"
+sed -e "s|__USER__|${USER_NAME}|g" scripts/rnk-rpi.sudoers > "$SUDOERS_SRC"
+if ! sudo visudo -c -f "$SUDOERS_SRC" >/dev/null; then
+    echo "ERROR: sudoers file failed validation; NOT installing it." >&2
+    cat "$SUDOERS_SRC" >&2
+    rm -f "$SUDOERS_SRC"
+    exit 1
+fi
+sudo install -m 0440 "$SUDOERS_SRC" /etc/sudoers.d/rnk-rpi
+rm -f "$SUDOERS_SRC"
+echo "    installed /etc/sudoers.d/rnk-rpi (passwordless for ${USER_NAME})"
+
+# 5b. wrapper script for start/stop/restart/status/logs
+chmod +x scripts/rnk-rpi
+echo "    installed scripts/rnk-rpi wrapper"
+
 echo
 echo "==> Done. Service status:"
-systemctl --no-pager status rnk-rpi || true
+sudo systemctl --no-pager status rnk-rpi || true
 echo
-echo "Next steps:"
-echo "  * Check logs:        journalctl -u rnk-rpi -f"
+echo "Next steps (no password needed):"
+echo "  * Manage service:    ./scripts/rnk-rpi start|stop|restart|status"
+echo "  * Follow logs:       ./scripts/rnk-rpi logs"
 echo "  * Try the API:       curl -X POST http://localhost:5000/rnk/schedule \\"
 echo "                        -H 'Content-Type: application/json' -d '{\"move\": 5}'"
 echo "  * Calibrate:         edit app/motor/constants.py (see README, 'Calibration')"
+echo
+echo "The service starts automatically at boot (systemd, WantedBy=multi-user.target)."

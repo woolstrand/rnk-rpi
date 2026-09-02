@@ -1,0 +1,24 @@
+#
+# Passwordless service management for the rnk-rpi project.
+#
+# Installed by scripts/setup.sh to /etc/sudoers.d/rnk-rpi.
+# The __USER__ placeholder is replaced with the invoking user's name.
+#
+# This lets the owning user start/stop/restart the rnk-rpi service and read
+# its logs without typing a sudo password, while still requiring root for
+# anything else. The command list is intentionally narrow: only the exact
+# systemctl verbs and journalctl invocations used by scripts/rnk-rpi.
+#
+__USER__ ALL=(ALL) NOPASSWD: \
+    /usr/bin/systemctl start rnk-rpi, \
+    /usr/bin/systemctl stop rnk-rpi, \
+    /usr/bin/systemctl restart rnk-rpi, \
+    /usr/bin/systemctl reload rnk-rpi, \
+    /usr/bin/systemctl enable rnk-rpi, \
+    /usr/bin/systemctl disable rnk-rpi, \
+    /usr/bin/systemctl status rnk-rpi, \
+    /usr/bin/systemctl is-active rnk-rpi, \
+    /usr/bin/systemctl is-enabled rnk-rpi, \
+    /usr/bin/systemctl daemon-reload, \
+    /usr/bin/journalctl -u rnk-rpi -f --no-pager, \
+    /usr/bin/journalctl -u rnk-rpi --no-pager -n 50
