@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-from . import constants
+from .motor import constants
 from .motor import kinematics
 
 log = logging.getLogger(__name__)

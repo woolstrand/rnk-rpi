@@ -11,7 +11,7 @@ import math
 
 from flask import Blueprint, current_app, jsonify, request
 
-from .. import constants
+from ..motor import constants
 
 rnk_bp = Blueprint("rnk", __name__, url_prefix="/rnk")
 
