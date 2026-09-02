@@ -11,6 +11,8 @@ rather than a camera-specific degrees/millimeters space.
 """
 
 import logging
+import os
+import sys
 import threading
 
 log = logging.getLogger(__name__)
@@ -18,6 +20,33 @@ log = logging.getLogger(__name__)
 
 class PTZError(RuntimeError):
     """Raised when a PTZ operation cannot be carried out."""
+
+
+def _resolve_wsdl_dir(explicit=None):
+    """Locate onvif-zeep's WSDL directory.
+
+    A packaging bug in the 2018 PyPI release of onvif-zeep installs the
+    ``wsdl`` folder it ships with to the wrong path inside virtualenvs, so
+    ``ONVIFCamera``'s own default lookup can fail even though the files are
+    present on disk somewhere. Try, in order: an explicit override, then
+    the well-known locations this bug is known to scatter files across.
+    """
+    if explicit:
+        return explicit
+
+    import onvif
+
+    package_dir = os.path.dirname(onvif.__file__)
+    site_packages_dir = os.path.dirname(package_dir)
+    candidates = [
+        os.path.join(package_dir, "wsdl"),
+        os.path.join(site_packages_dir, "wsdl"),
+        os.path.join(sys.prefix, "wsdl"),
+    ]
+    for candidate in candidates:
+        if os.path.isfile(os.path.join(candidate, "devicemgmt.wsdl")):
+            return candidate
+    return None
 
 
 class PTZController:
@@ -38,11 +67,20 @@ class PTZController:
             return
         from onvif import ONVIFCamera  # lazy: only needed once a camera is used
 
+        wsdl_dir = _resolve_wsdl_dir(self._config.onvif_wsdl_dir)
+        if wsdl_dir is None:
+            raise PTZError(
+                "onvif-zeep's WSDL files could not be found (see README "
+                "'Troubleshooting'); set CAMERA_ONVIF_WSDL_DIR in .env to "
+                "override"
+            )
+
         camera = ONVIFCamera(
             self._config.ip,
             self._config.onvif_port,
             self._config.username,
             self._config.password,
+            wsdl_dir,
         )
         media = camera.create_media_service()
         ptz = camera.create_ptz_service()

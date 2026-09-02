@@ -22,6 +22,9 @@ class CameraConfig:
     password: str
     rtsp_url: str
     onvif_timeout_s: float
+    #: Manual override for onvif-zeep's WSDL directory. Only needed if
+    #: auto-detection fails (see PTZController._resolve_wsdl_dir).
+    onvif_wsdl_dir: str = None
 
 
 def _env_int(name: str, default: int) -> int:
@@ -63,4 +66,5 @@ def load_camera_config():
         password=password,
         rtsp_url=rtsp_url,
         onvif_timeout_s=float(os.environ.get("CAMERA_ONVIF_TIMEOUT_S", "5")),
+        onvif_wsdl_dir=os.environ.get("CAMERA_ONVIF_WSDL_DIR") or None,
     )

@@ -218,6 +218,7 @@ cp .env.example .env
 | `CAMERA_USERNAME`         | *(empty)*   | ONVIF/RTSP username                                |
 | `CAMERA_PASSWORD`         | *(empty)*   | ONVIF/RTSP password                                |
 | `CAMERA_ONVIF_TIMEOUT_S`  | `5`         | Timeout for ONVIF SOAP calls                       |
+| `CAMERA_ONVIF_WSDL_DIR`   | *(auto-detected)* | Path to onvif-zeep's WSDL folder; only needed if auto-detection fails (see Troubleshooting) |
 | `CAMERA_RTSP_URL`         | *(built from the vars below)* | Full RTSP URL override, e.g. `rtsp://user:pass@ip:554/stream1` |
 | `CAMERA_RTSP_PORT`        | `554`       | RTSP port (used only if `CAMERA_RTSP_URL` is unset)|
 | `CAMERA_RTSP_PATH`        | `stream1`   | RTSP path (used only if `CAMERA_RTSP_URL` is unset)|
@@ -310,6 +311,65 @@ credentials, stream timeout, etc).
 
 All `/rnk/camera/*` endpoints return `503` if no camera is configured
 (`CAMERA_IP` unset in `.env`).
+
+### Troubleshooting
+
+A `502 camera communication failed` means the request reached the service
+but the ONVIF/RTSP call to the camera itself failed. The API only returns
+a generic message (to avoid leaking the camera URL/credentials in an HTTP
+response), but the full exception is logged — check it on the Pi:
+
+```bash
+./scripts/rnk-rpi logs-once   # last 50 lines
+./scripts/rnk-rpi logs        # live tail
+```
+
+To check ONVIF login/reachability directly, independent of the Flask app
+(run on the Pi, inside its venv):
+
+```bash
+.venv/bin/python -c "
+from onvif import ONVIFCamera
+cam = ONVIFCamera('<camera-ip>', <onvif-port>, '<username>', '<password>')
+print(cam.devicemgmt.GetDeviceInformation())
+"
+```
+
+* `onvif.exceptions.ONVIFError: ... No such file: .../wsdl/devicemgmt.wsdl`
+  → a packaging bug in the PyPI release of `onvif-zeep` (last published in
+  2018) installs its `wsdl/` folder to the wrong path inside virtualenvs.
+  `requirements.txt` installs from GitHub instead, which has the fix; if
+  you still hit this after `pip install -r requirements.txt`, locate the
+  files and point the app at them:
+  ```bash
+  find .venv -iname devicemgmt.wsdl
+  ```
+  then set `CAMERA_ONVIF_WSDL_DIR` in `.env` to the directory that file is
+  in (not the file itself), and `./scripts/rnk-rpi restart`. To test
+  manually, pass it as the 5th argument: `ONVIFCamera(ip, port, user,
+  password, '<that-directory>')`.
+* `Fault: Sender not Authorized` / similar → wrong username or password.
+* Connection refused/timeout → wrong IP or ONVIF port (many cameras use
+  `8080`, `2020`, or `8899`, not `80` — check the camera's own web UI/ONVIF
+  settings), or a firewall blocking it.
+* Auth failing with credentials you've verified are correct → check for
+  **clock skew**: ONVIF's WS-Security scheme timestamps every request and
+  cameras commonly reject requests if the Pi's and camera's clocks differ
+  by more than a few minutes (`timedatectl` on the Pi; make sure NTP is
+  enabled).
+
+To check the RTSP stream/credentials separately (snapshot uses a
+different code path than PTZ):
+
+```bash
+ffmpeg -loglevel error -rtsp_transport tcp \
+  -i 'rtsp://<username>:<password>@<camera-ip>:554/<path>' \
+  -frames:v 1 -f image2 -vcodec mjpeg test.jpg
+```
+
+If that produces a valid `test.jpg`, the RTSP side is fine even if ONVIF
+PTZ isn't (and vice versa) — they're independent connections/credentials
+on many cameras.
 
 ## Calibration
 

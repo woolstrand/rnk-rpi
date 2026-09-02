@@ -1,4 +1,7 @@
 flask>=3.0
 RPi.GPIO>=0.7.1
 python-dotenv>=1.0
-onvif-zeep>=0.2.12
+# PyPI's onvif-zeep (0.2.12, 2018) installs its WSDL files to the wrong path
+# inside virtualenvs; install straight from GitHub, which has the fix
+# ("wsdl installation path compatible with virtual environments").
+onvif-zeep @ git+https://github.com/FalkTannhaeuser/python-onvif-zeep.git

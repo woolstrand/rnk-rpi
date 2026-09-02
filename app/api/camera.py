@@ -12,6 +12,7 @@ Endpoints (mounted at ``/rnk/camera``):
 All endpoints return 503 if no camera is configured (see ``.env.example``).
 """
 
+import logging
 import math
 
 from flask import Blueprint, Response, current_app, jsonify, request
@@ -19,6 +20,8 @@ from flask import Blueprint, Response, current_app, jsonify, request
 from ..camera import constants
 from ..camera.ptz import PTZError
 from ..camera.snapshot import SnapshotError
+
+log = logging.getLogger(__name__)
 
 camera_bp = Blueprint("camera", __name__, url_prefix="/rnk/camera")
 
@@ -89,6 +92,7 @@ def ptz_absolute():
     except PTZError as exc:
         return _error(str(exc), 501)
     except Exception:
+        log.exception("absolute PTZ move failed")
         return _error("camera communication failed", 502)
 
     return jsonify({"status": "ok", "pan": pan, "tilt": tilt, "zoom": zoom}), 200
@@ -119,6 +123,7 @@ def ptz_relative():
     except PTZError as exc:
         return _error(str(exc), 501)
     except Exception:
+        log.exception("relative PTZ move failed")
         return _error("camera communication failed", 502)
 
     return jsonify({"status": "ok", "pan": pan, "tilt": tilt, "zoom": zoom}), 200
@@ -133,6 +138,7 @@ def ptz_stop():
     try:
         controller.stop()
     except Exception:
+        log.exception("PTZ stop failed")
         return _error("camera communication failed", 502)
     return jsonify({"status": "stopped"})
 
@@ -148,6 +154,7 @@ def home():
     except PTZError as exc:
         return _error(str(exc), 501)
     except Exception:
+        log.exception("PTZ home failed")
         return _error("camera communication failed", 502)
     return jsonify({"status": "ok"})
 
@@ -162,6 +169,7 @@ def status():
         position = controller.status()
         capabilities = controller.capabilities()
     except Exception:
+        log.exception("PTZ status query failed")
         return _error("camera communication failed", 502)
     return jsonify({**position, "capabilities": capabilities})
 
