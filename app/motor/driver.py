@@ -44,10 +44,11 @@ class MotorDriver:
             for role in ("in1", "in2", "in3", "in4"):
                 if role in pins:
                     gpio.setup(pins[role], gpio.OUT, initial=gpio.LOW)
-            gpio.setup(pins["enable"], gpio.OUT, initial=gpio.LOW)
-            pwm = gpio.PWM(pins["enable"], self._pwm_frequency)
-            pwm.start(0.0)
-            self._pwm[side] = pwm
+            if constants.ENABLE_SPEED_CONTROL:
+                gpio.setup(pins["enable"], gpio.OUT, initial=gpio.LOW)
+                pwm = gpio.PWM(pins["enable"], self._pwm_frequency)
+                pwm.start(0.0)
+                self._pwm[side] = pwm
 
         self._setup_done = True
 
@@ -60,7 +61,9 @@ class MotorDriver:
             for pwm in self._pwm.values():
                 pwm.stop()
             for pins in self._pins.values():
-                for pin in pins.values():
+                for role, pin in pins.items():
+                    if role == "enable" and not constants.ENABLE_SPEED_CONTROL:
+                        continue  # never configured, nothing to release
                     self._gpio.cleanup(pin)
         finally:
             self._pwm.clear()
@@ -91,7 +94,8 @@ class MotorDriver:
             else:
                 gpio.output(fwd, gpio.LOW)
                 gpio.output(rev, gpio.LOW)
-            self._pwm[side].ChangeDutyCycle(max(0.0, min(1.0, duty)) * 100.0)
+            if side in self._pwm:
+                self._pwm[side].ChangeDutyCycle(max(0.0, min(1.0, duty)) * 100.0)
 
     def forward(self, speed: float = constants.DEFAULT_SPEED) -> None:
         """Drive both wheels forward at the given duty (0.0-1.0)."""

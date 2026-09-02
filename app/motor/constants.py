@@ -20,13 +20,13 @@ import math
 
 #: Diameter of one driven wheel, in centimeters.
 #: Measure with a tape across the wheel (or circumference / pi).
-WHEEL_DIAMETER_CM = 13.0
+WHEEL_DIAMETER_CM = 11.0
 
 #: Center-to-center distance between the two driven wheels, in centimeters.
 #: Measure between the wheel axles. Used for rotation calculations:
 #: a full 360-degree turn makes each wheel travel one full circle of
 #: radius WHEEL_SEPARATION_CM / 2.
-WHEEL_SEPARATION_CM = 20.0
+WHEEL_SEPARATION_CM = 28.0
 
 # ---------------------------------------------------------------------------
 # Motor / drive parameters (CALIBRATE these to your motors)
@@ -35,7 +35,7 @@ WHEEL_SEPARATION_CM = 20.0
 #: No-load speed of one wheel motor in revolutions per minute,
 #: measured at 100% PWM duty. Typical small DC gear motors run
 #: 100-500 RPM; a common L298N demo motor is around 30-100 RPM.
-MOTOR_RPM = 30.0
+MOTOR_RPM = 16.6
 
 #: Default PWM duty cycle (0.0 - 1.0) used when executing commands.
 #: Lower values are slower and quieter; higher values are faster but
@@ -74,6 +74,13 @@ GPIO_PINS = {
 
 #: PWM frequency in Hz. 1000 Hz is inaudible and smooth for DC motors.
 PWM_FREQUENCY_HZ = 1000
+
+#: Whether the driver should actively drive ENA/ENB for PWM speed control.
+#: Set to False if ENA/ENB are hard-wired (jumpered) to a fixed voltage on
+#: the L298N board itself: the Pi's GPIO pins are then left unconfigured
+#: so they never contend with the jumper's fixed level. Set to True only
+#: after removing the jumpers and wiring ENA/ENB to the pins above.
+ENABLE_SPEED_CONTROL = False
 
 # ---------------------------------------------------------------------------
 # Command limits (safety rails for the public API)
