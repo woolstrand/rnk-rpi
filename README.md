@@ -336,11 +336,15 @@ print(cam.devicemgmt.GetDeviceInformation())
 ```
 
 * `onvif.exceptions.ONVIFError: ... No such file: .../wsdl/devicemgmt.wsdl`
-  → a packaging bug in the PyPI release of `onvif-zeep` (last published in
-  2018) installs its `wsdl/` folder to the wrong path inside virtualenvs.
-  `requirements.txt` installs from GitHub instead, which has the fix; if
-  you still hit this after `pip install -r requirements.txt`, locate the
-  files and point the app at them:
+  → onvif-zeep's install script computes where to copy its `wsdl/` folder
+  itself (via `distutils`/`sysconfig`) instead of shipping it as normal
+  package data, and that computation is unreliable — notably, on
+  Debian-based distros (Raspberry Pi OS included) it can report the wrong
+  Python version (e.g. copying to a `python3.4` directory inside a venv
+  that's actually running `python3.13`). The app auto-detects this at
+  startup by searching every `lib/python*/site-packages/wsdl` under the
+  venv, so this should now resolve itself. If it still doesn't, locate the
+  files and point the app at them manually:
   ```bash
   find .venv -iname devicemgmt.wsdl
   ```

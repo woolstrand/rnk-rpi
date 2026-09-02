@@ -10,6 +10,7 @@ zoom in 0.0..1.0), which every ONVIF PTZ camera is required to expose,
 rather than a camera-specific degrees/millimeters space.
 """
 
+import glob
 import logging
 import os
 import sys
@@ -25,11 +26,14 @@ class PTZError(RuntimeError):
 def _resolve_wsdl_dir(explicit=None):
     """Locate onvif-zeep's WSDL directory.
 
-    A packaging bug in the 2018 PyPI release of onvif-zeep installs the
-    ``wsdl`` folder it ships with to the wrong path inside virtualenvs, so
-    ``ONVIFCamera``'s own default lookup can fail even though the files are
-    present on disk somewhere. Try, in order: an explicit override, then
-    the well-known locations this bug is known to scatter files across.
+    onvif-zeep's install script copies its ``wsdl`` folder to a path it
+    computes itself via ``distutils``/``sysconfig`` rather than shipping it
+    as normal package data, and that computation is unreliable (e.g. on
+    Debian-based distros, including Raspberry Pi OS, it has been known to
+    report a hardcoded/wrong Python version such as "python3.4" regardless
+    of the interpreter actually in use). So ``ONVIFCamera``'s own default
+    lookup can miss it even though the files are present on disk somewhere.
+    Try, in order: an explicit override, then every plausible location.
     """
     if explicit:
         return explicit
@@ -43,6 +47,11 @@ def _resolve_wsdl_dir(explicit=None):
         os.path.join(site_packages_dir, "wsdl"),
         os.path.join(sys.prefix, "wsdl"),
     ]
+    # Covers e.g. ".venv/lib/python3.4/site-packages/wsdl" showing up
+    # inside a venv actually running a completely different Python version.
+    candidates += glob.glob(
+        os.path.join(sys.prefix, "lib", "python*", "site-packages", "wsdl")
+    )
     for candidate in candidates:
         if os.path.isfile(os.path.join(candidate, "devicemgmt.wsdl")):
             return candidate
