@@ -23,9 +23,8 @@ def test_move_time_s():
     assert kinematics.move_time_s(0.0) == 0.0
 
 
-def test_move_time_rejects_negative():
-    with pytest.raises(ValueError):
-        kinematics.move_time_s(-1.0)
+def test_move_time_s_ignores_sign():
+    assert kinematics.move_time_s(-10.0) == pytest.approx(kinematics.move_time_s(10.0))
 
 
 def test_rotate_time_s():
@@ -39,9 +38,8 @@ def test_rotate_time_s():
     assert kinematics.rotate_time_s(360.0) == pytest.approx(circumference / speed)
 
 
-def test_rotate_time_rejects_negative():
-    with pytest.raises(ValueError):
-        kinematics.rotate_time_s(-5.0)
+def test_rotate_time_s_ignores_sign():
+    assert kinematics.rotate_time_s(-90.0) == pytest.approx(kinematics.rotate_time_s(90.0))
 
 
 def test_zero_speed_raises():

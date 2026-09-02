@@ -82,6 +82,11 @@ PWM_FREQUENCY_HZ = 1000
 #: after removing the jumpers and wiring ENA/ENB to the pins above.
 ENABLE_SPEED_CONTROL = False
 
+#: Flip forward/backward for both wheels. Set to True when the wiring
+#: (motor leads or IN1/IN2 / IN3/IN4 pairs) makes "forward" commands drive
+#: the platform backward. Fixes direction without touching the pin map.
+INVERT_DIRECTION = True
+
 # ---------------------------------------------------------------------------
 # Command limits (safety rails for the public API)
 # ---------------------------------------------------------------------------

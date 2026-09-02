@@ -48,6 +48,32 @@ def test_commands_execute_one_by_one_in_order(driver, scheduler):
     assert driver.calls[-1][0] == "stop"
 
 
+def test_negative_move_drives_backward(driver, scheduler):
+    scheduler.enqueue("move", -1.0)
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if driver.motion_calls():
+            break
+        time.sleep(0.01)
+
+    names = [name for name, _ in driver.motion_calls()]
+    assert names[:1] == ["backward"]
+
+
+def test_negative_rotate_drives_right(driver, scheduler):
+    scheduler.enqueue("rotate", -1.0)
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if driver.motion_calls():
+            break
+        time.sleep(0.01)
+
+    names = [name for name, _ in driver.motion_calls()]
+    assert names[:1] == ["right"]
+
+
 def test_stop_halts_current_command_and_clears_queue(driver, scheduler):
     # A 30 cm move takes a while at the placeholder speed; stop mid-flight.
     scheduler.enqueue("move", 30.0)
@@ -95,9 +121,9 @@ def test_enqueue_rejects_invalid_values(driver, scheduler):
     with pytest.raises(ValueError):
         scheduler.enqueue("move", 0)
     with pytest.raises(ValueError):
-        scheduler.enqueue("move", -5)
-    with pytest.raises(ValueError):
         scheduler.enqueue("move", constants.MAX_MOVE_CM + 1)
+    with pytest.raises(ValueError):
+        scheduler.enqueue("move", -(constants.MAX_MOVE_CM + 1))
     with pytest.raises(ValueError):
         scheduler.enqueue("rotate", 0)
     with pytest.raises(ValueError):
@@ -105,6 +131,11 @@ def test_enqueue_rejects_invalid_values(driver, scheduler):
     with pytest.raises(ValueError):
         scheduler.enqueue("teleport", 1)
     assert scheduler.queue_size == 0
+
+
+def test_enqueue_accepts_negative_values(driver, scheduler):
+    assert scheduler.enqueue("move", -5) == 1
+    assert scheduler.enqueue("rotate", -10) == 2
 
 
 def test_enqueue_returns_position(driver, scheduler):

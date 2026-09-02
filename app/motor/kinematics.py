@@ -4,9 +4,13 @@ Pure functions only — no I/O, no GPIO. This keeps the math trivially
 testable on any machine.
 
 Conventions:
-  * ``move`` values are distances in centimeters. Positive = forward.
+  * ``move`` values are distances in centimeters. Positive = forward,
+    negative = backward. The sign only picks the direction; duration is
+    based on the magnitude.
   * ``rotate`` values are angles in degrees. Positive = clockwise
     (viewed from above) = left wheel forward, right wheel backward.
+    Negative = counter-clockwise = left wheel backward, right wheel
+    forward. Duration is based on the magnitude.
 
 Both wheels of a command run at DEFAULT_SPEED, so the conversions below
 are based on the linear speed of a single wheel at that duty.
@@ -21,14 +25,13 @@ def move_time_s(distance_cm: float) -> float:
     """Seconds both wheels must run (same direction) to travel ``distance_cm``.
 
     Both wheels move together, so the platform travels exactly the
-    distance each wheel travels.
+    distance each wheel travels. The sign of ``distance_cm`` is ignored;
+    the caller decides forward vs backward.
     """
-    if distance_cm < 0:
-        raise ValueError("distance_cm must be non-negative")
     speed = constants.wheel_speed_cm_per_s()
     if speed <= 0:
         raise ValueError("wheel speed is zero; check MOTOR_RPM / DEFAULT_SPEED")
-    return distance_cm / speed
+    return abs(distance_cm) / speed
 
 
 def rotate_time_s(angle_deg: float) -> float:
@@ -40,11 +43,12 @@ def rotate_time_s(angle_deg: float) -> float:
     wheel travel one full circle of that radius:
 
         arc length per full turn = pi * WHEEL_SEPARATION_CM
+
+    The sign of ``angle_deg`` is ignored; the caller decides clockwise vs
+    counter-clockwise.
     """
-    if angle_deg < 0:
-        raise ValueError("angle_deg must be non-negative")
     speed = constants.wheel_speed_cm_per_s()
     if speed <= 0:
         raise ValueError("wheel speed is zero; check MOTOR_RPM / DEFAULT_SPEED")
     circumference = math.pi * constants.WHEEL_SEPARATION_CM
-    return (angle_deg / 360.0) * circumference / speed
+    return (abs(angle_deg) / 360.0) * circumference / speed

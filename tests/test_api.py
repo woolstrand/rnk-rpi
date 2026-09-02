@@ -29,15 +29,15 @@ def test_post_rotate_returns_202(client):
         {"move": 70, "rotate": 35},  # both
         {},  # neither
         {"move": 0},
-        {"move": -5},
         {"move": "ten"},
         {"move": None},
         {"move": float("inf")},
         {"move": float("nan")},
         {"move": 10**9},  # over MAX_MOVE_CM
+        {"move": -(10**9)},  # over MAX_MOVE_CM in magnitude
         {"rotate": 0},
-        {"rotate": -35},
         {"rotate": 10**9},  # over MAX_ROTATE_DEG
+        {"rotate": -(10**9)},  # over MAX_ROTATE_DEG in magnitude
         {"forward": 10},  # unknown key
     ],
 )
@@ -45,6 +45,18 @@ def test_post_invalid_payload_returns_400(client, payload):
     resp = client.post("/rnk/schedule", json=payload)
     assert resp.status_code == 400
     assert "error" in resp.get_json()
+
+
+def test_post_negative_move_returns_202(client):
+    resp = client.post("/rnk/schedule", json={"move": -70})
+    assert resp.status_code == 202
+    assert resp.get_json()["command"] == {"kind": "move", "value": -70.0}
+
+
+def test_post_negative_rotate_returns_202(client):
+    resp = client.post("/rnk/schedule", json={"rotate": -35})
+    assert resp.status_code == 202
+    assert resp.get_json()["command"] == {"kind": "rotate", "value": -35.0}
 
 
 def test_post_non_json_body_returns_400(client):

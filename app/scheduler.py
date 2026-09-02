@@ -82,18 +82,18 @@ class CommandScheduler:
 
         Raises:
             ValueError: if ``kind`` is not "move"/"rotate" or the value
-                is out of the configured limits.
+                is zero or exceeds the configured limits in magnitude.
             queue.Full: if the queue already holds MAX_QUEUE_SIZE commands.
         """
         if kind == "move":
-            if not (0 < value <= constants.MAX_MOVE_CM):
+            if value == 0 or abs(value) > constants.MAX_MOVE_CM:
                 raise ValueError(
-                    f"move value must be in (0, {constants.MAX_MOVE_CM}] cm, got {value}"
+                    f"move value must be nonzero and within \u00b1{constants.MAX_MOVE_CM} cm, got {value}"
                 )
         elif kind == "rotate":
-            if not (0 < value <= constants.MAX_ROTATE_DEG):
+            if value == 0 or abs(value) > constants.MAX_ROTATE_DEG:
                 raise ValueError(
-                    f"rotate value must be in (0, {constants.MAX_ROTATE_DEG}] deg, got {value}"
+                    f"rotate value must be nonzero and within \u00b1{constants.MAX_ROTATE_DEG} deg, got {value}"
                 )
         else:
             raise ValueError(f"unknown command kind: {kind!r}")
@@ -175,10 +175,16 @@ class CommandScheduler:
     def _execute(self, cmd: Command) -> None:
         if cmd.kind == "move":
             duration = kinematics.move_time_s(cmd.value)
-            self._driver.forward()
+            if cmd.value >= 0:
+                self._driver.forward()
+            else:
+                self._driver.backward()
         else:  # rotate
             duration = kinematics.rotate_time_s(cmd.value)
-            self._driver.left()
+            if cmd.value >= 0:
+                self._driver.left()
+            else:
+                self._driver.right()
 
         log.info(
             "executing %s %s for %.3fs", cmd.kind, cmd.value, duration

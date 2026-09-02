@@ -47,10 +47,10 @@ def _parse_command(payload):
     value = float(value)
     if not math.isfinite(value):
         raise ValueError(f"'{kind}' must be a finite number")
-    if value <= 0:
-        raise ValueError(f"'{kind}' must be positive")
-    if value > limit:
-        raise ValueError(f"'{kind}' must not exceed {limit} {unit}")
+    if value == 0:
+        raise ValueError(f"'{kind}' must not be zero")
+    if abs(value) > limit:
+        raise ValueError(f"'{kind}' must not exceed {limit} {unit} in magnitude")
 
     return kind, value
 
@@ -59,8 +59,10 @@ def _parse_command(payload):
 def schedule():
     """Enqueue a motion command.
 
-    Accepts ``{"move": <cm>}`` or ``{"rotate": <deg>}``.
-    Commands execute strictly one by one, in the order received.
+    Accepts ``{"move": <cm>}`` or ``{"rotate": <deg>}``. Positive values
+    move forward / rotate clockwise; negative values move backward /
+    rotate counter-clockwise. Commands execute strictly one by one, in
+    the order received.
     """
     payload = request.get_json(silent=True)
     if payload is None:

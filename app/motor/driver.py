@@ -85,6 +85,8 @@ class MotorDriver:
                 fwd, rev = pins["in1"], pins["in2"]
             else:
                 fwd, rev = pins["in3"], pins["in4"]
+            if constants.INVERT_DIRECTION:
+                direction = -direction
             if direction > 0:
                 gpio.output(fwd, gpio.HIGH)
                 gpio.output(rev, gpio.LOW)
