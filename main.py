@@ -29,9 +29,15 @@ def main() -> int:
         log.info("shutting down")
         scheduler.shutdown()
 
+    def handle_signal(signum, frame):
+        # Werkzeug's dev server keeps serving unless the process actually
+        # exits, so the handler must terminate it, not just clean up.
+        shutdown(signum, frame)
+        sys.exit(0)
+
     atexit.register(shutdown)
-    signal.signal(signal.SIGTERM, shutdown)
-    signal.signal(signal.SIGINT, shutdown)
+    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, handle_signal)
 
     scheduler.start()
     log.info(
