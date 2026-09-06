@@ -32,15 +32,19 @@ WHEEL_SEPARATION_CM = 28.0
 # Motor / drive parameters (CALIBRATE these to your motors)
 # ---------------------------------------------------------------------------
 
-#: No-load speed of one wheel motor in revolutions per minute,
-#: measured at 100% PWM duty. Typical small DC gear motors run
-#: 100-500 RPM; a common L298N demo motor is around 30-100 RPM.
-MOTOR_RPM = 16.6
+#: Encoder ticks per one revolution of the *motor* shaft (before the
+#: gearbox reduction). Each driven wheel has one encoder trigger, which is
+#: enough since the commanded direction is already known.
+ENCODER_TICKS_PER_MOTOR_REV = 11
 
-#: Default PWM duty cycle (0.0 - 1.0) used when executing commands.
+#: Gearbox reduction ratio between the motor shaft and the wheel axle.
+#: One wheel revolution corresponds to GEAR_RATIO motor revolutions.
+GEAR_RATIO = 21.3
+
+#: Default PWM duty cycle (0.0 - 1.0] used when executing commands.
 #: Lower values are slower and quieter; higher values are faster but
-#: draw more current. 0.5 is a safe starting point.
-DEFAULT_SPEED = 0.5
+#: draw more current.
+DEFAULT_SPEED = 0.4
 
 # ---------------------------------------------------------------------------
 # L298N wiring (BCM GPIO pin numbers)
@@ -48,12 +52,20 @@ DEFAULT_SPEED = 0.5
 #
 # L298N module pinout (typical "L298N dual H-bridge" board):
 #
-#   ENA  -> PWM pin for the LEFT  wheel (enable / speed)
-#   IN1  -> left wheel forward
-#   IN2  -> left wheel backward
-#   ENB  -> PWM pin for the RIGHT wheel (enable / speed)
-#   IN3  -> right wheel forward
-#   IN4  -> right wheel backward
+#   IN1  -> left wheel forward (PWM speed + direction)
+#   IN2  -> left wheel backward (PWM speed + direction)
+#   IN3  -> right wheel forward (PWM speed + direction)
+#   IN4  -> right wheel backward (PWM speed + direction)
+#
+# Each motor now has an encoder (one trigger per motor is enough since the
+# commanded direction is already known):
+#
+#   left encoder  -> signal input, counts ticks while the left motor spins
+#   right encoder -> signal input, counts ticks while the right motor spins
+#
+# ENA/ENB are no longer driven by the Pi: speed is controlled by applying
+# PWM directly to whichever direction pin (IN1/IN2/IN3/IN4) is active,
+# instead of the enable pin.
 #
 # Power: motor supply (7-12 V) to the module's + terminal, and the
 # module GROUND must be connected to the Raspberry Pi GROUND.
@@ -61,26 +73,19 @@ DEFAULT_SPEED = 0.5
 
 GPIO_PINS = {
     "left": {
-        "enable": 12,  # ENA
-        "in1": 17,     # forward
-        "in2": 27,     # backward
+        "in1": 17,      # forward (PWM)
+        "in2": 27,      # backward (PWM)
+        "encoder": 5,   # encoder signal
     },
     "right": {
-        "enable": 13,  # ENB
-        "in3": 22,     # forward
-        "in4": 23,     # backward
+        "in3": 22,      # forward (PWM)
+        "in4": 23,      # backward (PWM)
+        "encoder": 6,   # encoder signal
     },
 }
 
 #: PWM frequency in Hz. 1000 Hz is inaudible and smooth for DC motors.
 PWM_FREQUENCY_HZ = 1000
-
-#: Whether the driver should actively drive ENA/ENB for PWM speed control.
-#: Set to False if ENA/ENB are hard-wired (jumpered) to a fixed voltage on
-#: the L298N board itself: the Pi's GPIO pins are then left unconfigured
-#: so they never contend with the jumper's fixed level. Set to True only
-#: after removing the jumpers and wiring ENA/ENB to the pins above.
-ENABLE_SPEED_CONTROL = False
 
 #: Flip forward/backward for both wheels. Set to True when the wiring
 #: (motor leads or IN1/IN2 / IN3/IN4 pairs) makes "forward" commands drive
@@ -106,9 +111,11 @@ MAX_QUEUE_SIZE = 100
 STOP_CHECK_INTERVAL_S = 0.05
 
 
-def wheel_speed_cm_per_s(speed: float = DEFAULT_SPEED) -> float:
-    """Linear speed of one wheel in cm/s at the given PWM duty.
+def wheel_ticks_per_revolution() -> float:
+    """Encoder ticks produced by one full revolution of the wheel."""
+    return ENCODER_TICKS_PER_MOTOR_REV * GEAR_RATIO
 
-    wheel_speed = RPM * duty * (pi * diameter) / 60
-    """
-    return MOTOR_RPM * speed * (math.pi * WHEEL_DIAMETER_CM) / 60.0
+
+def wheel_ticks_per_cm() -> float:
+    """Encoder ticks produced per centimeter of wheel travel."""
+    return wheel_ticks_per_revolution() / (math.pi * WHEEL_DIAMETER_CM)

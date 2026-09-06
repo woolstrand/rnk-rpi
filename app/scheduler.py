@@ -31,17 +31,20 @@ class Command:
     Attributes:
         kind: "move" (value in cm) or "rotate" (value in degrees).
         value: Magnitude of the command.
+        speed: PWM duty cycle (0.0, 1.0] to drive the motors at.
         added_at: Unix timestamp when the command was enqueued.
     """
 
     kind: str
     value: float
+    speed: float = constants.DEFAULT_SPEED
     added_at: float = field(default_factory=time.time)
 
     def to_dict(self) -> dict:
         return {
             "kind": self.kind,
             "value": self.value,
+            "speed": self.speed,
             "added_at": self.added_at,
         }
 
@@ -74,15 +77,18 @@ class CommandScheduler:
             )
             self._worker.start()
 
-    def enqueue(self, kind: str, value: float) -> int:
+    def enqueue(
+        self, kind: str, value: float, speed: float = constants.DEFAULT_SPEED
+    ) -> int:
         """Add a command to the queue.
 
         Returns:
             The 1-based position of the command in the queue.
 
         Raises:
-            ValueError: if ``kind`` is not "move"/"rotate" or the value
-                is zero or exceeds the configured limits in magnitude.
+            ValueError: if ``kind`` is not "move"/"rotate", the value is
+                zero or exceeds the configured limits in magnitude, or
+                ``speed`` is not within (0, 1].
             queue.Full: if the queue already holds MAX_QUEUE_SIZE commands.
         """
         if kind == "move":
@@ -98,7 +104,12 @@ class CommandScheduler:
         else:
             raise ValueError(f"unknown command kind: {kind!r}")
 
-        self._queue.put_nowait(Command(kind=kind, value=float(value)))
+        if not (0 < speed <= 1):
+            raise ValueError(f"speed must be within (0, 1], got {speed}")
+
+        self._queue.put_nowait(
+            Command(kind=kind, value=float(value), speed=float(speed))
+        )
         return self._queue.qsize()
 
     def stop(self) -> int:
@@ -174,26 +185,28 @@ class CommandScheduler:
 
     def _execute(self, cmd: Command) -> None:
         if cmd.kind == "move":
-            duration = kinematics.move_time_s(cmd.value)
+            target_ticks = kinematics.move_ticks(cmd.value)
             if cmd.value >= 0:
-                self._driver.forward()
+                self._driver.forward(cmd.speed)
             else:
-                self._driver.backward()
+                self._driver.backward(cmd.speed)
         else:  # rotate
-            duration = kinematics.rotate_time_s(cmd.value)
+            target_ticks = kinematics.rotate_ticks(cmd.value)
             if cmd.value >= 0:
-                self._driver.left()
+                self._driver.left(cmd.speed)
             else:
-                self._driver.right()
+                self._driver.right(cmd.speed)
 
         log.info(
-            "executing %s %s for %.3fs", cmd.kind, cmd.value, duration
+            "executing %s %s at speed %.2f for %d encoder ticks",
+            cmd.kind, cmd.value, cmd.speed, target_ticks,
         )
-        deadline = time.monotonic() + duration
-        while time.monotonic() < deadline:
+        self._driver.reset_ticks()
+        while True:
             if self._stop_event.is_set():
                 log.info("stop requested during %s", cmd.kind)
                 return
-            time.sleep(
-                min(constants.STOP_CHECK_INTERVAL_S, deadline - time.monotonic())
-            )
+            ticks = self._driver.get_ticks()
+            if min(ticks.values()) >= target_ticks:
+                return
+            time.sleep(constants.STOP_CHECK_INTERVAL_S)

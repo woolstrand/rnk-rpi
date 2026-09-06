@@ -1,17 +1,26 @@
 """L298N motor driver: GPIO control of the two wheel H-bridge channels.
 
-The L298N module has two H-bridge channels. Each channel is controlled
-by:
-  * an ENABLE pin (PWM) — sets speed (0-100% duty);
-  * two input pins (INx) — set direction:
-      IN1=1, IN2=0 -> forward
-      IN1=0, IN2=1 -> backward
-      IN1=0, IN2=0 -> coast (brake is not used; we always stop via PWM=0)
+Each motor is wired directly to two direction pins on the L298N (IN1/IN2
+for the left motor, IN3/IN4 for the right motor). ENA/ENB are not driven
+by the Pi: speed is controlled by applying PWM directly to whichever
+direction pin is active for the current motion (forward or backward),
+instead of the enable pin. Direction is selected simply by choosing which
+of the two pins receives the PWM signal, while the other stays at 0% duty
+(effectively LOW):
+  * forward:  IN1/IN3 = PWM(duty), IN2/IN4 = 0%
+  * backward: IN1/IN3 = 0%,        IN2/IN4 = PWM(duty)
+  * stopped:  both pins = 0%
+
+Each motor also has an encoder. Only one trigger per motor is needed
+since the commanded direction is already known; the driver counts rising
+edges on that pin to track how far each wheel has turned.
 
 ``RPi.GPIO`` is imported lazily inside :meth:`MotorDriver.setup` so that
 this module can be imported (and the rest of the app tested) on machines
 without Raspberry Pi GPIO support.
 """
+
+import threading
 
 from . import constants
 
@@ -25,13 +34,15 @@ class MotorDriver:
         self._gpio = None
         self._pwm = {}
         self._setup_done = False
+        self._ticks_lock = threading.Lock()
+        self._ticks = {"left": 0, "right": 0}
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
     def setup(self) -> None:
-        """Initialize GPIO pins and PWM channels. Call once before use."""
+        """Initialize GPIO pins, PWM channels and encoder inputs. Call once before use."""
         if self._setup_done:
             return
         import RPi.GPIO as gpio  # lazy: not available off the Pi
@@ -41,14 +52,22 @@ class MotorDriver:
         gpio.setwarnings(False)
 
         for side, pins in self._pins.items():
-            for role in ("in1", "in2", "in3", "in4"):
-                if role in pins:
-                    gpio.setup(pins[role], gpio.OUT, initial=gpio.LOW)
-            if constants.ENABLE_SPEED_CONTROL:
-                gpio.setup(pins["enable"], gpio.OUT, initial=gpio.LOW)
-                pwm = gpio.PWM(pins["enable"], self._pwm_frequency)
+            fwd_role, rev_role = self._direction_roles(side)
+            for role in (fwd_role, rev_role):
+                pin = pins[role]
+                gpio.setup(pin, gpio.OUT, initial=gpio.LOW)
+                pwm = gpio.PWM(pin, self._pwm_frequency)
                 pwm.start(0.0)
-                self._pwm[side] = pwm
+                self._pwm[(side, role)] = pwm
+
+            encoder_pin = pins["encoder"]
+            gpio.setup(encoder_pin, gpio.IN, pull_up_down=gpio.PUD_UP)
+            gpio.add_event_detect(
+                encoder_pin,
+                gpio.RISING,
+                callback=self._make_tick_callback(side),
+                bouncetime=1,
+            )
 
         self._setup_done = True
 
@@ -60,11 +79,12 @@ class MotorDriver:
             self.stop()
             for pwm in self._pwm.values():
                 pwm.stop()
-            for pins in self._pins.values():
-                for role, pin in pins.items():
-                    if role == "enable" and not constants.ENABLE_SPEED_CONTROL:
-                        continue  # never configured, nothing to release
-                    self._gpio.cleanup(pin)
+            for side, pins in self._pins.items():
+                fwd_role, rev_role = self._direction_roles(side)
+                for role in (fwd_role, rev_role):
+                    self._gpio.cleanup(pins[role])
+                self._gpio.remove_event_detect(pins["encoder"])
+                self._gpio.cleanup(pins["encoder"])
         finally:
             self._pwm.clear()
             self._setup_done = False
@@ -73,38 +93,36 @@ class MotorDriver:
     # Motion primitives
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _direction_roles(side: str):
+        return ("in1", "in2") if side == "left" else ("in3", "in4")
+
     def _set(self, left: float, right: float) -> None:
         """Set both wheels. Values are (direction, duty) pairs:
         +1 forward, -1 backward, 0 stopped; duty in 0.0-1.0."""
         if not self._setup_done:
             raise RuntimeError("MotorDriver.setup() has not been called")
         for side, (direction, duty) in (("left", left), ("right", right)):
-            pins = self._pins[side]
-            gpio = self._gpio
-            if side == "left":
-                fwd, rev = pins["in1"], pins["in2"]
-            else:
-                fwd, rev = pins["in3"], pins["in4"]
+            fwd_role, rev_role = self._direction_roles(side)
             if constants.INVERT_DIRECTION:
                 direction = -direction
+            duty_pct = max(0.0, min(1.0, duty)) * 100.0
             if direction > 0:
-                gpio.output(fwd, gpio.HIGH)
-                gpio.output(rev, gpio.LOW)
+                self._pwm[(side, fwd_role)].ChangeDutyCycle(duty_pct)
+                self._pwm[(side, rev_role)].ChangeDutyCycle(0.0)
             elif direction < 0:
-                gpio.output(fwd, gpio.LOW)
-                gpio.output(rev, gpio.HIGH)
+                self._pwm[(side, fwd_role)].ChangeDutyCycle(0.0)
+                self._pwm[(side, rev_role)].ChangeDutyCycle(duty_pct)
             else:
-                gpio.output(fwd, gpio.LOW)
-                gpio.output(rev, gpio.LOW)
-            if side in self._pwm:
-                self._pwm[side].ChangeDutyCycle(max(0.0, min(1.0, duty)) * 100.0)
+                self._pwm[(side, fwd_role)].ChangeDutyCycle(0.0)
+                self._pwm[(side, rev_role)].ChangeDutyCycle(0.0)
 
     def forward(self, speed: float = constants.DEFAULT_SPEED) -> None:
-        """Drive both wheels forward at the given duty (0.0-1.0)."""
+        """Drive both wheels forward at the given duty (0.0-1.0]."""
         self._set((1, speed), (1, speed))
 
     def backward(self, speed: float = constants.DEFAULT_SPEED) -> None:
-        """Drive both wheels backward at the given duty (0.0-1.0)."""
+        """Drive both wheels backward at the given duty (0.0-1.0]."""
         self._set((-1, speed), (-1, speed))
 
     def left(self, speed: float = constants.DEFAULT_SPEED) -> None:
@@ -118,7 +136,28 @@ class MotorDriver:
         self._set((-1, speed), (1, speed))
 
     def stop(self) -> None:
-        """Stop both wheels immediately (PWM off, inputs low)."""
+        """Stop both wheels immediately (PWM off)."""
         if not self._setup_done:
             return
         self._set((0, 0.0), (0, 0.0))
+
+    # ------------------------------------------------------------------
+    # Encoders
+    # ------------------------------------------------------------------
+
+    def _make_tick_callback(self, side: str):
+        def _callback(_channel):
+            with self._ticks_lock:
+                self._ticks[side] += 1
+
+        return _callback
+
+    def reset_ticks(self) -> None:
+        """Zero both wheels' accumulated encoder tick counts."""
+        with self._ticks_lock:
+            self._ticks = {"left": 0, "right": 0}
+
+    def get_ticks(self) -> dict:
+        """Return a snapshot of accumulated encoder ticks per wheel."""
+        with self._ticks_lock:
+            return dict(self._ticks)

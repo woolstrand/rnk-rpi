@@ -52,14 +52,22 @@ def _parse_command(payload):
     if abs(value) > limit:
         raise ValueError(f"'{kind}' must not exceed {limit} {unit} in magnitude")
 
-    return kind, value
+    speed = payload.get("speed", constants.DEFAULT_SPEED)
+    if isinstance(speed, bool) or not isinstance(speed, (int, float)):
+        raise ValueError("'speed' must be a number")
+    speed = float(speed)
+    if not math.isfinite(speed) or not (0 < speed <= 1):
+        raise ValueError("'speed' must be a finite number within (0, 1]")
+
+    return kind, value, speed
 
 
 @rnk_bp.post("/schedule")
 def schedule():
     """Enqueue a motion command.
 
-    Accepts ``{"move": <cm>}`` or ``{"rotate": <deg>}``. Positive values
+    Accepts ``{"move": <cm>}`` or ``{"rotate": <deg>}``, plus an optional
+    ``"speed"`` (PWM duty cycle, (0, 1], default 0.4). Positive values
     move forward / rotate clockwise; negative values move backward /
     rotate counter-clockwise. Commands execute strictly one by one, in
     the order received.
@@ -69,13 +77,13 @@ def schedule():
         return _error("request body must be valid JSON", 400)
 
     try:
-        kind, value = _parse_command(payload)
+        kind, value, speed = _parse_command(payload)
     except ValueError as exc:
         return _error(str(exc), 400)
 
     scheduler = _scheduler()
     try:
-        position = scheduler.enqueue(kind, value)
+        position = scheduler.enqueue(kind, value, speed)
     except ValueError as exc:
         return _error(str(exc), 400)
     except Exception:
@@ -85,7 +93,7 @@ def schedule():
         jsonify(
             {
                 "status": "queued",
-                "command": {"kind": kind, "value": value},
+                "command": {"kind": kind, "value": value, "speed": speed},
                 "position": position,
                 "queue_size": scheduler.queue_size,
             }

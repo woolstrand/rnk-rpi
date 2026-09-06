@@ -12,7 +12,7 @@ def test_post_move_returns_202(client):
     assert resp.status_code == 202
     data = resp.get_json()
     assert data["status"] == "queued"
-    assert data["command"] == {"kind": "move", "value": 70.0}
+    assert data["command"] == {"kind": "move", "value": 70.0, "speed": pytest.approx(0.4)}
     assert data["position"] == 1
     assert data["queue_size"] >= 1
 
@@ -20,7 +20,11 @@ def test_post_move_returns_202(client):
 def test_post_rotate_returns_202(client):
     resp = client.post("/rnk/schedule", json={"rotate": 35})
     assert resp.status_code == 202
-    assert resp.get_json()["command"] == {"kind": "rotate", "value": 35.0}
+    assert resp.get_json()["command"] == {
+        "kind": "rotate",
+        "value": 35.0,
+        "speed": pytest.approx(0.4),
+    }
 
 
 @pytest.mark.parametrize(
@@ -39,6 +43,9 @@ def test_post_rotate_returns_202(client):
         {"rotate": 10**9},  # over MAX_ROTATE_DEG
         {"rotate": -(10**9)},  # over MAX_ROTATE_DEG in magnitude
         {"forward": 10},  # unknown key
+        {"move": 10, "speed": 0},  # speed out of range
+        {"move": 10, "speed": 1.5},  # speed out of range
+        {"move": 10, "speed": "fast"},  # speed not a number
     ],
 )
 def test_post_invalid_payload_returns_400(client, payload):
@@ -47,16 +54,30 @@ def test_post_invalid_payload_returns_400(client, payload):
     assert "error" in resp.get_json()
 
 
+def test_post_move_accepts_custom_speed(client):
+    resp = client.post("/rnk/schedule", json={"move": 70, "speed": 1.0})
+    assert resp.status_code == 202
+    assert resp.get_json()["command"] == {"kind": "move", "value": 70.0, "speed": 1.0}
+
+
 def test_post_negative_move_returns_202(client):
     resp = client.post("/rnk/schedule", json={"move": -70})
     assert resp.status_code == 202
-    assert resp.get_json()["command"] == {"kind": "move", "value": -70.0}
+    assert resp.get_json()["command"] == {
+        "kind": "move",
+        "value": -70.0,
+        "speed": pytest.approx(0.4),
+    }
 
 
 def test_post_negative_rotate_returns_202(client):
     resp = client.post("/rnk/schedule", json={"rotate": -35})
     assert resp.status_code == 202
-    assert resp.get_json()["command"] == {"kind": "rotate", "value": -35.0}
+    assert resp.get_json()["command"] == {
+        "kind": "rotate",
+        "value": -35.0,
+        "speed": pytest.approx(0.4),
+    }
 
 
 def test_post_non_json_body_returns_400(client):

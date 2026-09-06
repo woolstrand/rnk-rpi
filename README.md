@@ -67,16 +67,28 @@ see [Calibration](#calibration) before first use.
 
 | L298N pin | Raspberry Pi (BCM GPIO) | Purpose                    |
 |-----------|-------------------------|----------------------------|
-| ENA       | 12                      | left wheel speed (PWM)     |
-| IN1       | 17                      | left wheel forward         |
-| IN2       | 27                      | left wheel backward        |
-| ENB       | 13                      | right wheel speed (PWM)    |
-| IN3       | 22                      | right wheel forward        |
-| IN4       | 23                      | right wheel backward       |
+| IN1       | 17                      | left wheel forward (PWM)   |
+| IN2       | 27                      | left wheel backward (PWM)  |
+| IN3       | 22                      | right wheel forward (PWM)  |
+| IN4       | 23                      | right wheel backward (PWM) |
 | GND       | any GND pin             | **must** be connected      |
 | + (motor supply) | 7–12 V battery   | **not** the Pi's 5 V       |
 
+| Encoder signal | Raspberry Pi (BCM GPIO) | Purpose                |
+|----------------|-------------------------|------------------------|
+| left encoder   | 5                       | left wheel tick count   |
+| right encoder  | 6                       | right wheel tick count  |
+
 Motor outputs: `OUT1/OUT2` → left motor, `OUT3/OUT4` → right motor.
+
+`ENA`/`ENB` are **not** wired to the Pi: speed is controlled by driving
+PWM directly on whichever direction pin (`IN1`/`IN2`/`IN3`/`IN4`) is
+active for the current motion, so `ENA`/`ENB` should be jumpered to a
+fixed "always enabled" voltage on the L298N board itself.
+
+Each motor has one encoder. Only a single trigger signal per motor is
+needed (no quadrature A/B channels), since the commanded direction is
+already known — the driver just counts pulses while a motor is driving.
 
 > ⚠️ **Shared ground is mandatory.** The battery GND must be connected to
 > the Pi GND, otherwise the GPIO signals have no common reference and the
@@ -411,15 +423,17 @@ with **placeholder values**. Before trusting the robot, calibrate:
    circumference with a tape and divide by π).
 2. **`WHEEL_SEPARATION_CM`** — measure center-to-center distance between
    the two driven wheel axles.
-3. **`MOTOR_RPM`** — the no-load RPM of your motor at full power. If the
-   spec is unknown: run `{"move": 100}` with the platform on stands,
-   time it with a stopwatch, and compute
-   `RPM = distance_cm / time_s * 60 / (pi * WHEEL_DIAMETER_CM) / DEFAULT_SPEED`.
-4. **`DEFAULT_SPEED`** — start at `0.5`. Raise for more speed, lower for
-   more control / less current draw.
+3. **`ENCODER_TICKS_PER_MOTOR_REV`** and **`GEAR_RATIO`** — from your
+   motor/encoder datasheet. Distance and angle are computed directly
+   from encoder ticks, so these two numbers (plus the wheel dimensions
+   above) fully determine accuracy — there's no timing to calibrate.
+4. **`DEFAULT_SPEED`** — start at `0.4`. Raise for more speed, lower for
+   more control / less current draw. Can be overridden per request via
+   the optional `"speed"` field, (0, 1].
 5. **Verify**: command a 100 cm move, measure the actual distance, and
-   adjust `MOTOR_RPM` (or `DEFAULT_SPEED`) until the error is within ~10%.
-   Do the same for a 360° rotation.
+   adjust `WHEEL_DIAMETER_CM` (or `GEAR_RATIO`, if the datasheet value is
+   imprecise) until the error is within ~10%. Do the same for a 360°
+   rotation using `WHEEL_SEPARATION_CM`.
 
 After editing constants: `./scripts/rnk-rpi restart`.
 
@@ -434,8 +448,8 @@ After editing constants: `./scripts/rnk-rpi restart`.
 │   ├── scheduler.py         # queue + single worker thread + stop
 │   └── motor/
 │       ├── constants.py     # ← all hardware parameters (calibrate here)
-│       ├── driver.py        # L298N GPIO control (PWM + direction)
-│       └── kinematics.py    # cm/deg → seconds conversions
+│       ├── driver.py        # L298N GPIO control (PWM on direction pins + encoders)
+│       └── kinematics.py    # cm/deg → encoder tick conversions
 ├── scripts/
 │   ├── setup.sh             # one-shot Pi setup (deps, venv, systemd, sudoers)
 │   ├── rnk-rpi              # passwordless start/stop/restart/status/logs wrapper
@@ -467,6 +481,10 @@ The tests use a fake motor driver, so no GPIO hardware is needed.
   `journalctl -u rnk-rpi -f` that commands are being executed.
 * **Motors spin the wrong way** — swap the two motor leads on the L298N
   output, or swap `in1`/`in2` (and `in3`/`in4`) in `GPIO_PINS`.
+* **Command never completes / times out** — the encoder isn't wired or
+  isn't producing pulses; check the encoder signal wiring and
+  `GPIO_PINS["..."]["encoder"]`, and confirm ticks accumulate with a
+  logic probe or `journalctl -u rnk-rpi -f`.
 * **Robot drifts sideways on `move`** — the two motors are not matched.
   Fine-tune by adding per-wheel speed factors in `app/motor/driver.py`
   (e.g. scale the right wheel duty by 0.95) until it runs straight.

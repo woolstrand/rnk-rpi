@@ -130,6 +130,10 @@ def test_enqueue_rejects_invalid_values(driver, scheduler):
         scheduler.enqueue("rotate", constants.MAX_ROTATE_DEG + 1)
     with pytest.raises(ValueError):
         scheduler.enqueue("teleport", 1)
+    with pytest.raises(ValueError):
+        scheduler.enqueue("move", 1.0, speed=0)
+    with pytest.raises(ValueError):
+        scheduler.enqueue("move", 1.0, speed=1.5)
     assert scheduler.queue_size == 0
 
 

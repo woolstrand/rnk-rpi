@@ -19,6 +19,7 @@ class FakeMotorDriver:
     def __init__(self):
         self.calls = []
         self._lock = threading.Lock()
+        self._ticks = {"left": 0, "right": 0}
 
     def _record(self, name, *args):
         with self._lock:
@@ -30,20 +31,32 @@ class FakeMotorDriver:
     def cleanup(self):
         self._record("cleanup")
 
-    def forward(self, speed=0.5):
+    def forward(self, speed=0.4):
         self._record("forward", speed)
 
-    def backward(self, speed=0.5):
+    def backward(self, speed=0.4):
         self._record("backward", speed)
 
-    def left(self, speed=0.5):
+    def left(self, speed=0.4):
         self._record("left", speed)
 
-    def right(self, speed=0.5):
+    def right(self, speed=0.4):
         self._record("right", speed)
 
     def stop(self):
         self._record("stop")
+
+    def reset_ticks(self):
+        with self._lock:
+            self._ticks = {"left": 0, "right": 0}
+
+    def get_ticks(self):
+        # Simulate gradual progress so tests can interrupt a running
+        # command with stop() before it reaches its target tick count.
+        with self._lock:
+            self._ticks["left"] += 1
+            self._ticks["right"] += 1
+            return dict(self._ticks)
 
     def motion_calls(self):
         """All calls except setup/cleanup/stop, in order."""
