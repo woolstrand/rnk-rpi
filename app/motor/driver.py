@@ -141,6 +141,21 @@ class MotorDriver:
             return
         self._set((0, 0.0), (0, 0.0))
 
+    def drive(
+        self,
+        left_direction: int,
+        left_speed: float,
+        right_direction: int,
+        right_speed: float,
+    ) -> None:
+        """Command each wheel's direction/duty independently.
+
+        Used by the scheduler's closed-loop trajectory correction to
+        rebalance duty cycle between the wheels without changing the
+        overall commanded direction.
+        """
+        self._set((left_direction, left_speed), (right_direction, right_speed))
+
     # ------------------------------------------------------------------
     # Encoders
     # ------------------------------------------------------------------

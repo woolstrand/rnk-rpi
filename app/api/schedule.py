@@ -2,9 +2,10 @@
 
 Endpoints (mounted at ``/rnk``):
 
-  POST /rnk/schedule  enqueue a motion command
-  GET  /rnk/schedule  inspect the queue
-  POST /rnk/stop      halt the motors and clear the queue
+  POST /rnk/schedule      enqueue a motion command
+  GET  /rnk/schedule      inspect the queue
+  POST /rnk/stop          halt the motors and clear the queue
+  POST /rnk/errors/reset  clear a recorded stall/obstacle error
 """
 
 import math
@@ -86,6 +87,8 @@ def schedule():
         position = scheduler.enqueue(kind, value, speed)
     except ValueError as exc:
         return _error(str(exc), 400)
+    except RuntimeError as exc:
+        return _error(str(exc), 409)
     except Exception:
         return _error("command queue is full", 503)
 
@@ -111,6 +114,7 @@ def get_schedule():
             "busy": scheduler.is_busy,
             "queue_size": scheduler.queue_size,
             "queue": scheduler.pending(),
+            "error": scheduler.error,
         }
     )
 
@@ -121,3 +125,11 @@ def stop():
     scheduler = _scheduler()
     cleared = scheduler.stop()
     return jsonify({"status": "stopped", "cleared": cleared})
+
+
+@rnk_bp.post("/errors/reset")
+def reset_errors():
+    """Clear a recorded stall/obstacle error, re-enabling new commands."""
+    scheduler = _scheduler()
+    scheduler.reset_errors()
+    return jsonify({"status": "ok"})

@@ -110,6 +110,31 @@ MAX_QUEUE_SIZE = 100
 #: slightly more CPU.
 STOP_CHECK_INTERVAL_S = 0.05
 
+# ---------------------------------------------------------------------------
+# Closed-loop trajectory control (encoder-based)
+# ---------------------------------------------------------------------------
+
+#: Tick difference between the two wheels' cumulative counts that
+#: triggers power-balancing compensation (one wheel's duty is nudged down,
+#: the other's up, to keep the wheels in step).
+TICK_BALANCE_THRESHOLD = 3
+
+#: Duty-cycle adjustment applied per tick of divergence beyond
+#: TICK_BALANCE_THRESHOLD.
+TICK_BALANCE_GAIN = 0.02
+
+#: Maximum duty-cycle adjustment compensation may apply to either wheel.
+MAX_SPEED_CORRECTION = 0.3
+
+#: Tick divergence between wheels beyond which compensation is considered
+#: unable to keep up (e.g. a wheel is blocked or slipping on an obstacle).
+STALL_DIVERGENCE_TICKS = 20
+
+#: How long (seconds) the trajectory may stay diverged beyond
+#: STALL_DIVERGENCE_TICKS, or either wheel may show no encoder progress
+#: at all, before the command is aborted as a stall/obstacle.
+STALL_TIMEOUT_S = 1.0
+
 
 def wheel_ticks_per_revolution() -> float:
     """Encoder ticks produced by one full revolution of the wheel."""

@@ -104,6 +104,7 @@ def test_get_schedule_empty(client):
     assert data["queue"] == []
     assert data["queue_size"] == 0
     assert data["busy"] is False
+    assert data["error"] is None
 
 
 def test_stop_clears_queue(client):
@@ -122,6 +123,45 @@ def test_stop_clears_queue(client):
     data = client.get("/rnk/schedule").get_json()
     assert data["queue"] == []
     assert data["busy"] is False
+
+
+def test_stop_does_not_block_later_commands(client):
+    """Regression test: stop() must not prevent later commands from running."""
+    client.post("/rnk/schedule", json={"move": 30})
+    time.sleep(0.05)
+    client.post("/rnk/stop")
+
+    resp = client.post("/rnk/schedule", json={"move": 1})
+    assert resp.status_code == 202
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if not client.get("/rnk/schedule").get_json()["busy"]:
+            break
+        time.sleep(0.01)
+    assert not client.get("/rnk/schedule").get_json()["busy"]
+
+
+def test_errors_reset_endpoint_clears_error(client, app):
+    scheduler = app.extensions["scheduler"]
+    scheduler._error = {"message": "simulated stall", "at": time.time()}
+
+    data = client.get("/rnk/schedule").get_json()
+    assert data["error"]["message"] == "simulated stall"
+
+    # Queuing new commands is refused while an error is active.
+    resp = client.post("/rnk/schedule", json={"move": 1})
+    assert resp.status_code == 409
+
+    resp = client.post("/rnk/errors/reset")
+    assert resp.status_code == 200
+    assert resp.get_json()["status"] == "ok"
+
+    data = client.get("/rnk/schedule").get_json()
+    assert data["error"] is None
+
+    resp = client.post("/rnk/schedule", json={"move": 1})
+    assert resp.status_code == 202
 
 
 def test_queue_full_returns_503(client, app):

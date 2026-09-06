@@ -46,6 +46,9 @@ class FakeMotorDriver:
     def stop(self):
         self._record("stop")
 
+    def drive(self, left_direction, left_speed, right_direction, right_speed):
+        self._record("drive", left_direction, left_speed, right_direction, right_speed)
+
     def reset_ticks(self):
         with self._lock:
             self._ticks = {"left": 0, "right": 0}
@@ -59,9 +62,17 @@ class FakeMotorDriver:
             return dict(self._ticks)
 
     def motion_calls(self):
-        """All calls except setup/cleanup/stop, in order."""
+        """High-level direction calls (forward/backward/left/right), in order.
+
+        Excludes setup/cleanup/stop and the low-level ``drive`` calls used
+        for closed-loop per-wheel correction.
+        """
         with self._lock:
-            return [c for c in self.calls if c[0] not in ("setup", "cleanup", "stop")]
+            return [
+                c
+                for c in self.calls
+                if c[0] not in ("setup", "cleanup", "stop", "drive")
+            ]
 
 
 class FakePTZController:
