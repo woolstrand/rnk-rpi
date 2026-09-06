@@ -115,14 +115,28 @@ def fake_snapshot():
 
 
 @pytest.fixture
-def app(fake_driver, fake_ptz, fake_snapshot):
+def fake_audio_player():
+    calls = []
+
+    def play(data):
+        calls.append(data)
+
+    play.calls = calls
+    return play
+
+
+@pytest.fixture
+def app(fake_driver, fake_ptz, fake_snapshot, fake_audio_player):
     """Flask app wired to a fake driver/camera and a started scheduler."""
     import app.motor.constants as constants
 
     constants.STOP_CHECK_INTERVAL_S = 0.001
 
     application = create_app(
-        driver=fake_driver, ptz_controller=fake_ptz, snapshot_source=fake_snapshot
+        driver=fake_driver,
+        ptz_controller=fake_ptz,
+        snapshot_source=fake_snapshot,
+        audio_player=fake_audio_player,
     )
     application.config["TESTING"] = True
     application.extensions["scheduler"].start()

@@ -2,6 +2,7 @@
 
 from flask import Flask
 
+from .audio.player import play_file
 from .camera.config import load_camera_config
 from .camera.ptz import PTZController
 from .camera.snapshot import capture_frame
@@ -10,7 +11,13 @@ from .motor.driver import MotorDriver
 from .scheduler import CommandScheduler
 
 
-def create_app(driver=None, scheduler=None, ptz_controller=None, snapshot_source=None):
+def create_app(
+    driver=None,
+    scheduler=None,
+    ptz_controller=None,
+    snapshot_source=None,
+    audio_player=None,
+):
     """Application factory.
 
     Args:
@@ -24,9 +31,15 @@ def create_app(driver=None, scheduler=None, ptz_controller=None, snapshot_source
         snapshot_source: A callable ``(scaled: bool) -> bytes`` returning a
             JPEG frame. When omitted, one is created from ``.env`` camera
             settings, if configured.
+        audio_player: A callable ``(data: bytes) -> None`` that plays an
+            audio file on the default output. When omitted, the real
+            ffmpeg/aplay-based player is used.
     """
     app = Flask(__name__)
     app.config.from_object(Config)
+
+    if audio_player is None:
+        audio_player = play_file
 
     if driver is None:
         driver = MotorDriver()
@@ -44,11 +57,14 @@ def create_app(driver=None, scheduler=None, ptz_controller=None, snapshot_source
     app.extensions["scheduler"] = scheduler
     app.extensions["ptz_controller"] = ptz_controller
     app.extensions["snapshot_source"] = snapshot_source
+    app.extensions["audio_player"] = audio_player
 
+    from .api.audio import audio_bp
     from .api.camera import camera_bp
     from .api.schedule import rnk_bp
 
     app.register_blueprint(rnk_bp)
+    app.register_blueprint(audio_bp)
     app.register_blueprint(camera_bp)
 
     return app

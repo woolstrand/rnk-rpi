@@ -20,6 +20,7 @@ The service exposes a small HTTP API:
 | POST   | `/rnk/camera/home`      | Reset the camera to its home/center position                   |
 | GET    | `/rnk/camera/status`    | Current camera PTZ position + capabilities                     |
 | GET    | `/rnk/camera/snapshot`  | Capture a single JPEG frame from the camera's RTSP stream       |
+| POST   | `/rnk/audio/play`       | Upload an audio file and play it immediately on the default output |
 
 Commands are executed **strictly one by one**, in the order received, by a
 single worker thread. After every command the motors are stopped, so the
@@ -103,9 +104,10 @@ The service binds to `0.0.0.0:5000` (configurable in `app/config.py`), so
 you can command the robot from any device on the local network.
 
 `setup.sh` also installs `ffmpeg` (used to grab camera snapshots) and
-creates a `.env` file from `.env.example` if one doesn't already exist —
-edit it with the camera's real IP address and credentials (see
-[Camera control](#camera-control)) and restart the service.
+`alsa-utils` (used to play audio via `aplay`), and creates a `.env` file
+from `.env.example` if one doesn't already exist — edit it with the
+camera's real IP address and credentials (see [Camera
+control](#camera-control)) and restart the service.
 
 ### Service management
 
@@ -311,6 +313,31 @@ credentials, stream timeout, etc).
 
 All `/rnk/camera/*` endpoints return `503` if no camera is configured
 (`CAMERA_IP` unset in `.env`).
+
+## Audio playback
+
+### `POST /rnk/audio/play`
+
+Upload an audio file and play it immediately on the Pi's default ALSA
+audio output. The file is decoded by `ffmpeg` (so wav/mp3/ogg/... all
+work) and piped straight into `aplay`.
+
+```bash
+curl -X POST http://<pi-ip>:5000/rnk/audio/play -F 'audio=@sound.mp3'
+```
+
+Response `200` once playback has started (it does not wait for playback
+to finish):
+
+```json
+{"status": "playing", "bytes": 123456}
+```
+
+Validation/errors:
+
+* `400` — no `audio` file field, or the uploaded file is empty
+* `413` — file exceeds `MAX_AUDIO_BYTES` (default 20 MB)
+* `502` — `ffmpeg`/`aplay` isn't installed on the Pi
 
 ### Troubleshooting
 

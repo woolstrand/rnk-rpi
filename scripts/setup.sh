@@ -44,6 +44,14 @@ else
     echo "==> ffmpeg already present"
 fi
 
+if ! command -v aplay >/dev/null; then
+    echo "==> Installing alsa-utils (needed for audio playback)"
+    sudo apt-get update
+    sudo apt-get install -y alsa-utils
+else
+    echo "==> alsa-utils (aplay) already present"
+fi
+
 # ---------------------------------------------------------------------------
 # 2. Virtualenv + Python dependencies
 # ---------------------------------------------------------------------------
