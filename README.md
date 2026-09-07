@@ -11,9 +11,10 @@ The service exposes a small HTTP API:
 
 | Method | Path                    | Description                                                  |
 |--------|-------------------------|---------------------------------------------------------------|
-| POST   | `/rnk/schedule`         | Enqueue a command: `{"move": <cm>}` or `{"rotate": <deg>}`    |
-| GET    | `/rnk/schedule`         | Inspect the queue (running + pending commands)                |
+| POST   | `/rnk/schedule`         | Enqueue a command: `{"move": <cm>}` or `{"rotate": <deg>}`, optional `"speed"` |
+| GET    | `/rnk/schedule`         | Inspect the queue (running + pending commands) and any error   |
 | POST   | `/rnk/stop`             | Halt the motors immediately and clear the queue                |
+| POST   | `/rnk/errors/reset`     | Clear a recorded stall/obstacle error                          |
 | POST   | `/rnk/camera/ptz/absolute` | Move the camera to an absolute pan/tilt/zoom position       |
 | POST   | `/rnk/camera/ptz/relative` | Move the camera by a pan/tilt/zoom delta                    |
 | POST   | `/rnk/camera/ptz/stop`  | Stop any in-progress camera movement                           |
@@ -41,15 +42,26 @@ HTTP client ──> Flask API (POST /rnk/schedule)
               L298N module ──> left wheel motor / right wheel motor
 ```
 
-* **`move`** — both wheels run in the same direction for a duration
-  computed from the distance (cm). Positive = forward.
-* **`rotate`** — wheels run in opposite directions (pivot in place) for a
-  duration computed from the angle (degrees). Positive = clockwise
-  (viewed from above).
+* **`move`** — both wheels run in the same direction until each wheel's
+  encoder reports enough ticks to cover the distance (cm). Positive =
+  forward.
+* **`rotate`** — wheels run in opposite directions (pivot in place) until
+  each wheel's encoder reports enough ticks for the angle (degrees).
+  Positive = clockwise (viewed from above).
+* **`speed`** — optional PWM duty cycle, (0, 1], default 0.4.
 
-All physical parameters (wheel diameter, wheel separation, motor RPM,
-PWM duty, GPIO pins, limits) live in **[`app/motor/constants.py`](app/motor/constants.py)** —
-see [Calibration](#calibration) before first use.
+While a command runs, the two wheels' cumulative encoder ticks are kept in
+sync: a small divergence is compensated by nudging each wheel's duty up or
+down, and a divergence (or a total lack of encoder progress) that
+persists beyond `STALL_TIMEOUT_S` is treated as a stall or obstacle — the
+motors stop immediately, the queue is cleared, and the failure is
+reported by `GET /rnk/schedule` until cleared with `POST
+/rnk/errors/reset`.
+
+All physical parameters (wheel diameter, wheel separation, encoder ticks
+per revolution, gear ratio, PWM duty, GPIO pins, limits) live in
+**[`app/motor/constants.py`](app/motor/constants.py)** — see
+[Calibration](#calibration) before first use.
 
 ## Hardware
 
@@ -147,7 +159,7 @@ shutdown the driver is cleaned up, so the motors are never left energized.
 ### `POST /rnk/schedule`
 
 Enqueue a motion command. The body must be a JSON object with **exactly
-one** of the two keys:
+one** of `move`/`rotate`, plus an optional `speed`:
 
 ```bash
 # Move forward 70 cm
@@ -155,10 +167,10 @@ curl -X POST http://<pi-ip>:5000/rnk/schedule \
   -H 'Content-Type: application/json' \
   -d '{"move": 70}'
 
-# Rotate 35 degrees clockwise (in place)
+# Rotate 35 degrees clockwise (in place) at a custom speed
 curl -X POST http://<pi-ip>:5000/rnk/schedule \
   -H 'Content-Type: application/json' \
-  -d '{"rotate": 35}'
+  -d '{"rotate": 35, "speed": 0.6}'
 ```
 
 Response `202`:
@@ -166,7 +178,7 @@ Response `202`:
 ```json
 {
   "status": "queued",
-  "command": {"kind": "move", "value": 70.0},
+  "command": {"kind": "move", "value": 70.0, "speed": 0.4},
   "position": 1,
   "queue_size": 1
 }
@@ -178,8 +190,11 @@ Validation (all return `400` with an `error` message):
 * non-numeric, non-finite, or non-positive values
 * `move` above `MAX_MOVE_CM` (default 1000 cm)
 * `rotate` above `MAX_ROTATE_DEG` (default 3600 deg)
+* `speed` not within (0, 1]
 
 A `503` is returned when the queue is full (`MAX_QUEUE_SIZE`, default 100).
+A `409` is returned when a stall/obstacle error is active — see
+[`POST /rnk/errors/reset`](#post-rnkerrorsreset).
 
 ### `GET /rnk/schedule`
 
@@ -192,11 +207,15 @@ curl http://<pi-ip>:5000/rnk/schedule
   "busy": true,
   "queue_size": 2,
   "queue": [
-    {"kind": "move", "value": 70.0, "added_at": 1756680000.123, "state": "running"},
-    {"kind": "rotate", "value": 35.0, "added_at": 1756680001.456, "state": "queued"}
-  ]
+    {"kind": "move", "value": 70.0, "speed": 0.4, "added_at": 1756680000.123, "state": "running"},
+    {"kind": "rotate", "value": 35.0, "speed": 0.4, "added_at": 1756680001.456, "state": "queued"}
+  ],
+  "error": null
 }
 ```
+
+`error` is `null` when healthy, or `{"message": ..., "at": <unix ts>}` when
+a stall/obstacle was detected (see below).
 
 ### `POST /rnk/stop`
 
@@ -205,7 +224,18 @@ curl -X POST http://<pi-ip>:5000/rnk/stop
 ```
 
 Stops the currently running command within ~50 ms and discards all pending
-commands. Response: `{"status": "stopped", "cleared": 2}`.
+commands. Response: `{"status": "stopped", "cleared": 2}`. The worker
+keeps running, so commands enqueued afterward execute normally.
+
+### `POST /rnk/errors/reset`
+
+```bash
+curl -X POST http://<pi-ip>:5000/rnk/errors/reset
+```
+
+Clears a recorded stall/obstacle error (see [How it
+works](#how-it-works)), re-enabling `POST /rnk/schedule`. Response:
+`{"status": "ok"}`.
 
 ## Camera control
 
@@ -434,6 +464,19 @@ with **placeholder values**. Before trusting the robot, calibrate:
    adjust `WHEEL_DIAMETER_CM` (or `GEAR_RATIO`, if the datasheet value is
    imprecise) until the error is within ~10%. Do the same for a 360°
    rotation using `WHEEL_SEPARATION_CM`.
+6. **`TICK_BALANCE_THRESHOLD`** / **`TICK_BALANCE_GAIN`** /
+   **`MAX_SPEED_CORRECTION`** — govern how aggressively the two wheels'
+   duty cycles are rebalanced when their encoder counts start to diverge
+   (e.g. from motor mismatch or uneven load). Raise the gain or lower the
+   threshold if the platform still drifts; lower the gain if it
+   overcorrects/oscillates.
+7. **`STALL_DIVERGENCE_TICKS`** / **`STALL_TIMEOUT_S`** — how far the
+   wheels may diverge (or how long either may go without encoder
+   progress) before it's treated as a stall/obstacle and the command is
+   aborted with an error (see [`POST /rnk/errors/reset`](#post-rnkerrorsreset)).
+   Lower `STALL_TIMEOUT_S` for a more sensitive obstacle stop; raise it
+   (or `STALL_DIVERGENCE_TICKS`) if normal cornering/slippage trips false
+   positives.
 
 After editing constants: `./scripts/rnk-rpi restart`.
 
