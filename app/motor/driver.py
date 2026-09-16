@@ -67,7 +67,7 @@ class MotorDriver:
                     encoder_pin,
                     gpio.RISING,
                     callback=self._make_tick_callback(side),
-                    bouncetime=1,
+                    bouncetime=constants.ENCODER_BOUNCE_MS,
                 )
         except Exception:
             # Leaving PWM channels running / edge detection registered on a

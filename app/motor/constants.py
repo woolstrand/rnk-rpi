@@ -114,6 +114,13 @@ STOP_CHECK_INTERVAL_S = 0.05
 # Closed-loop trajectory control (encoder-based)
 # ---------------------------------------------------------------------------
 
+#: Master switch for the power-balancing compensation loop below. Set to
+#: False to drive both wheels open-loop (no duty adjustment at all) - e.g.
+#: to see what the platform's raw, uncorrected trajectory looks like.
+#: Stall/obstacle detection (further below) is independent of this and
+#: keeps running either way.
+POWER_BALANCE_ENABLED = False
+
 #: Tick difference between the two wheels' cumulative counts that
 #: triggers power-balancing compensation (one wheel's duty is nudged down,
 #: the other's up, to keep the wheels in step).
@@ -128,13 +135,19 @@ MAX_SPEED_CORRECTION = 0.4
 
 #: Tick divergence between wheels beyond which compensation is considered
 #: unable to keep up (e.g. a wheel is blocked or slipping on an obstacle).
-STALL_DIVERGENCE_TICKS = 20
+STALL_DIVERGENCE_TICKS = 140
 
 #: How long (seconds) the trajectory may stay diverged beyond
 #: STALL_DIVERGENCE_TICKS, or either wheel may show no encoder progress
 #: at all, before the command is aborted as a stall/obstacle.
-STALL_TIMEOUT_S = 100.0
-
+STALL_TIMEOUT_S = 5.0
+#: Encoder edge debounce, in milliseconds (RPi.GPIO's add_event_detect
+#: bouncetime). Ground contact (vibration, stick-slip under load) can cause
+#: a wheel under more friction to register spurious extra ticks at a very
+#: short debounce window, making it look like it's *ahead* of the other
+#: wheel and get its duty cut instead of boosted - if one wheel seems to
+#: gradually stall out while the other runs away, try raising this first.
+ENCODER_BOUNCE_MS = 0
 
 def wheel_ticks_per_revolution() -> float:
     """Encoder ticks produced by one full revolution of the wheel."""

@@ -262,6 +262,7 @@ class CommandScheduler:
         diverged_since: Optional[float] = None
         last_progress = 0
         last_progress_time = time.monotonic()
+        last_log_time = 0.0
 
         while True:
             if self._interrupt_event.is_set():
@@ -280,7 +281,7 @@ class CommandScheduler:
             # --- power-balancing compensation ---
             # If one wheel is pulling ahead of the other, nudge its duty
             # down and the lagging wheel's duty up to straighten out.
-            if abs(diff) > constants.TICK_BALANCE_THRESHOLD:
+            if constants.POWER_BALANCE_ENABLED and abs(diff) > constants.TICK_BALANCE_THRESHOLD:
                 correction = min(
                     abs(diff) * constants.TICK_BALANCE_GAIN,
                     constants.MAX_SPEED_CORRECTION,
@@ -292,6 +293,13 @@ class CommandScheduler:
                 else:  # right wheel ahead of left
                     left_speed, right_speed = boosted, cut
                 self._driver.drive(left_dir, left_speed, right_dir, right_speed)
+                if now - last_log_time > 0.5:
+                    last_log_time = now
+                    log.info(
+                        "correcting %s: left_ticks=%d right_ticks=%d diff=%+d -> "
+                        "left_speed=%.2f right_speed=%.2f",
+                        cmd.kind, left_ticks, right_ticks, diff, left_speed, right_speed,
+                    )
 
             # --- stall / obstacle detection ---
             # Divergence that compensation can't correct within a short
