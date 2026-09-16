@@ -20,13 +20,15 @@ class PlaybackError(RuntimeError):
     """Raised when playback can't even be started (e.g. missing binaries)."""
 
 
-def play_file(data: bytes) -> None:
+def play_file(data: bytes, volume: float = constants.DEFAULT_VOLUME) -> None:
     """Decode ``data`` (raw bytes of an audio file) and play it immediately.
 
     Starting playback is fire-and-forget: decoding/playing happens on a
     background thread so the caller (an HTTP request handler) isn't held
     open for the audio's duration. Only failures to *launch* the pipeline
     raise; failures during decode/playback itself are logged.
+
+    ``volume`` is a gain multiplier applied while decoding (1.0 = unchanged).
 
     Raises:
         PlaybackError: ``data`` is empty, or ffmpeg/aplay isn't installed.
@@ -39,6 +41,7 @@ def play_file(data: bytes) -> None:
             [
                 "ffmpeg", "-loglevel", "error",
                 "-i", "pipe:0",
+                "-filter:a", f"volume={volume}",
                 "-f", "s16le",
                 "-ar", str(constants.SAMPLE_RATE),
                 "-ac", str(constants.CHANNELS),

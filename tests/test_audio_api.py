@@ -15,7 +15,48 @@ def test_play_reads_upload_and_calls_player(client, fake_audio_player):
     )
     assert resp.status_code == 200
     assert resp.get_json() == {"status": "playing", "bytes": len(b"fake-wav-bytes")}
-    assert fake_audio_player.calls == [b"fake-wav-bytes"]
+    assert fake_audio_player.calls == [(b"fake-wav-bytes", 1.0)]
+
+
+def test_play_accepts_volume_field(client, fake_audio_player):
+    resp = client.post(
+        "/rnk/audio/play",
+        data={
+            "audio": (io.BytesIO(b"fake-wav-bytes"), "sound.wav"),
+            "volume": "0.5",
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 200
+    assert fake_audio_player.calls == [(b"fake-wav-bytes", 0.5)]
+
+
+def test_play_rejects_invalid_volume(client, fake_audio_player):
+    resp = client.post(
+        "/rnk/audio/play",
+        data={
+            "audio": (io.BytesIO(b"fake-wav-bytes"), "sound.wav"),
+            "volume": "not-a-number",
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+    assert fake_audio_player.calls == []
+
+
+def test_play_rejects_out_of_range_volume(client, fake_audio_player):
+    resp = client.post(
+        "/rnk/audio/play",
+        data={
+            "audio": (io.BytesIO(b"fake-wav-bytes"), "sound.wav"),
+            "volume": "10",
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+    assert fake_audio_player.calls == []
 
 
 def test_play_missing_file_field_returns_400(client):
@@ -48,7 +89,7 @@ def test_play_oversized_file_returns_413(client, monkeypatch):
 def test_play_propagates_playback_errors(client, monkeypatch):
     from app.audio.player import PlaybackError
 
-    def boom(data):
+    def boom(data, volume=1.0):
         raise PlaybackError("aplay is not installed")
 
     client.application.extensions["audio_player"] = boom

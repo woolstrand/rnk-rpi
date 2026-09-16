@@ -142,8 +142,8 @@ def fake_snapshot():
 def fake_audio_player():
     calls = []
 
-    def play(data):
-        calls.append(data)
+    def play(data, volume=1.0):
+        calls.append((data, volume))
 
     play.calls = calls
     return play
