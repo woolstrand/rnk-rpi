@@ -82,6 +82,8 @@ def probe_camera_audio(rtsp_url: str, timeout_s: float = constants.PROBE_TIMEOUT
             "or audio is disabled in its stream profile)"
         )
 
+    log.info("camera RTSP stream has an audio track; audio capture enabled")
+
 
 class CameraAudioSource(AudioSource):
     """Extracts the audio track from the camera's RTSP stream via ffmpeg."""
@@ -116,11 +118,15 @@ class CameraAudioSource(AudioSource):
         except FileNotFoundError as exc:
             raise AudioSourceError("ffmpeg is not installed") from exc
 
+        first_chunk = True
         try:
             while True:
                 chunk = self._proc.stdout.read(constants.FRAME_BYTES)
                 if not chunk:
                     break
+                if first_chunk:
+                    log.info("receiving audio from the camera stream (ffmpeg is decoding it)")
+                    first_chunk = False
                 yield chunk
         finally:
             self._terminate()

@@ -51,23 +51,33 @@ class MotorDriver:
         gpio.setmode(gpio.BCM)
         gpio.setwarnings(False)
 
-        for side, pins in self._pins.items():
-            fwd_role, rev_role = self._direction_roles(side)
-            for role in (fwd_role, rev_role):
-                pin = pins[role]
-                gpio.setup(pin, gpio.OUT, initial=gpio.LOW)
-                pwm = gpio.PWM(pin, self._pwm_frequency)
-                pwm.start(0.0)
-                self._pwm[(side, role)] = pwm
+        try:
+            for side, pins in self._pins.items():
+                fwd_role, rev_role = self._direction_roles(side)
+                for role in (fwd_role, rev_role):
+                    pin = pins[role]
+                    gpio.setup(pin, gpio.OUT, initial=gpio.LOW)
+                    pwm = gpio.PWM(pin, self._pwm_frequency)
+                    pwm.start(0.0)
+                    self._pwm[(side, role)] = pwm
 
-            encoder_pin = pins["encoder"]
-            gpio.setup(encoder_pin, gpio.IN, pull_up_down=gpio.PUD_UP)
-            gpio.add_event_detect(
-                encoder_pin,
-                gpio.RISING,
-                callback=self._make_tick_callback(side),
-                bouncetime=1,
-            )
+                encoder_pin = pins["encoder"]
+                gpio.setup(encoder_pin, gpio.IN, pull_up_down=gpio.PUD_UP)
+                gpio.add_event_detect(
+                    encoder_pin,
+                    gpio.RISING,
+                    callback=self._make_tick_callback(side),
+                    bouncetime=1,
+                )
+        except Exception:
+            # Leaving PWM channels running / edge detection registered on a
+            # partial failure would make every crash-restart re-attempt setup
+            # against already-claimed GPIO state, so it could never recover.
+            for pwm in self._pwm.values():
+                pwm.stop()
+            self._pwm.clear()
+            gpio.cleanup()
+            raise
 
         self._setup_done = True
 

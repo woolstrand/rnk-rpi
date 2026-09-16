@@ -103,14 +103,17 @@ class AudioStreamServer:
             conn.close()
             return
 
+        bytes_sent = 0
         try:
             frames: Iterator[bytes] = source.frames()
             for chunk in frames:
                 if self._shutdown_event.is_set():
                     break
                 conn.sendall(chunk)
+                bytes_sent += len(chunk)
         except OSError:
             pass  # client disconnected mid-stream
         finally:
             source.close()
             conn.close()
+            log.info("relayed %d bytes of audio to this client", bytes_sent)
