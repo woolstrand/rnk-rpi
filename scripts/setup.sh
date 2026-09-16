@@ -61,6 +61,10 @@ if [ ! -d .venv ]; then
 fi
 echo "==> Installing Python requirements"
 .venv/bin/pip install --upgrade pip
+# RPi.GPIO and its replacement rpi-lgpio both install a module named
+# RPi.GPIO and can't coexist in the same venv; drop the old one first (no-op
+# if it was never installed) so switching between them is always clean.
+.venv/bin/pip uninstall -y RPi.GPIO >/dev/null 2>&1 || true
 .venv/bin/pip install -r requirements.txt
 
 if [ ! -f .env ]; then

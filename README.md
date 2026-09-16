@@ -409,6 +409,19 @@ touching the streaming code.
 
 ### Troubleshooting
 
+* `RuntimeError: Failed to add edge detection` (raised from
+  `MotorDriver.setup()`, wheel encoders) — recent Raspberry Pi OS kernels
+  (Bookworm and later) dropped the legacy sysfs GPIO interface that
+  `RPi.GPIO`'s `add_event_detect()` relies on; plain GPIO output (motor
+  direction/PWM pins) keeps working, only edge detection breaks, which is
+  why this only surfaced once encoder support was added. Fixed by
+  switching to `rpi-lgpio` (see `requirements.txt`), a drop-in replacement
+  for `RPi.GPIO` built on the modern `/dev/gpiochip` interface. If you're
+  updating an existing checkout, re-run `./scripts/setup.sh` (it now
+  uninstalls `RPi.GPIO` before installing `rpi-lgpio`, since the two
+  can't coexist in the same venv) rather than just `pip install -r
+  requirements.txt`.
+
 A `502 camera communication failed` means the request reached the service
 but the ONVIF/RTSP call to the camera itself failed. The API only returns
 a generic message (to avoid leaking the camera URL/credentials in an HTTP

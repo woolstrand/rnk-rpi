@@ -9,7 +9,9 @@ HOST:PORT (see app/config.py).
 import atexit
 import logging
 import signal
+import subprocess
 import sys
+from pathlib import Path
 
 from app import create_app
 from app.config import Config
@@ -21,7 +23,24 @@ logging.basicConfig(
 log = logging.getLogger("rnk-rpi")
 
 
+def _running_commit() -> str:
+    """Best-effort git commit/dirty-state of this checkout, for startup logs."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(Path(__file__).resolve().parent), "describe", "--always", "--dirty"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return "unknown (git not available)"
+    if result.returncode != 0 or not result.stdout:
+        return "unknown (not a git checkout)"
+    return result.stdout.decode("utf-8", "replace").strip()
+
+
 def main() -> int:
+    log.info("rnk-rpi starting, running commit %s", _running_commit())
     app = create_app()
     scheduler = app.extensions["scheduler"]
     audio_stream_server = app.extensions.get("audio_stream_server")

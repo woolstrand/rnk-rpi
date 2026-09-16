@@ -1,5 +1,13 @@
 flask>=3.0
-RPi.GPIO>=0.7.1
+# rpi-lgpio, not RPi.GPIO: it's a drop-in replacement (same `import RPi.GPIO`
+# API) built on /dev/gpiochip (lgpio) instead of the legacy sysfs GPIO
+# interface, which recent Raspberry Pi OS kernels have dropped - the old
+# RPi.GPIO's add_event_detect() (used for the wheel encoders) fails there
+# with "RuntimeError: Failed to add edge detection". The two packages
+# cannot be installed in the same virtualenv at once (see README
+# Troubleshooting) - if you're updating an existing .venv, run
+# `.venv/bin/pip uninstall -y RPi.GPIO` before re-running setup.sh/pip install.
+rpi-lgpio>=0.6
 python-dotenv>=1.0
 # PyPI's onvif-zeep (0.2.12, 2018) installs its WSDL files to the wrong path
 # inside virtualenvs; install straight from GitHub, which has the fix
