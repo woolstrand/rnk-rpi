@@ -23,6 +23,10 @@ The service exposes a small HTTP API:
 | GET    | `/rnk/camera/snapshot`  | Capture a single JPEG frame from the camera's RTSP stream       |
 | POST   | `/rnk/audio/play`       | Upload an audio file and play it immediately on the default output |
 
+It also runs a plain TCP server (default port `5001`, not part of the HTTP
+API above) that continuously streams captured microphone audio to
+whichever client connects — see [Audio capture](#audio-capture-continuous-mic-stream).
+
 Commands are executed **strictly one by one**, in the order received, by a
 single worker thread. After every command the motors are stopped, so the
 platform is never left moving on its own.
@@ -380,6 +384,28 @@ Validation/errors:
 * `400` — no `audio` file field, or the uploaded file is empty
 * `413` — file exceeds `MAX_AUDIO_BYTES` (default 20 MB)
 * `502` — `ffmpeg`/`aplay` isn't installed on the Pi
+
+## Audio capture (continuous mic stream)
+
+The Pi has no microphone of its own yet, so audio is captured by
+extracting the audio track from the ONVIF camera's RTSP stream via
+`ffmpeg` (see `app/audio/source.py`). This is **not** an HTTP endpoint —
+it's a plain TCP server (default port `5001`, see
+`app/audio/capture_constants.py`) that continuously streams raw PCM audio
+(16 kHz mono 16-bit signed little-endian) to whichever client connects —
+in practice, rnk-agent's speech pipeline (see its README).
+
+At startup, the service probes the camera's RTSP stream for an audio
+track (`ffprobe`). If the camera isn't configured, has no audio track, or
+is unreachable, audio streaming is disabled and a clear error is logged —
+the rest of the service (motor control, camera PTZ/snapshot, audio
+playback) is unaffected.
+
+The capture side is deliberately decoupled from the streaming server
+(`AudioStreamServer` only depends on the `AudioSource` interface in
+`app/audio/source.py`), so a different source (e.g. a real USB
+microphone, once one is wired up) can be swapped in later without
+touching the streaming code.
 
 ### Troubleshooting
 

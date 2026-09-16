@@ -24,10 +24,13 @@ log = logging.getLogger("rnk-rpi")
 def main() -> int:
     app = create_app()
     scheduler = app.extensions["scheduler"]
+    audio_stream_server = app.extensions.get("audio_stream_server")
 
     def shutdown(_signum=None, _frame=None):
         log.info("shutting down")
         scheduler.shutdown()
+        if audio_stream_server is not None:
+            audio_stream_server.shutdown()
 
     def handle_signal(signum, frame):
         # Werkzeug's dev server keeps serving unless the process actually
@@ -40,6 +43,8 @@ def main() -> int:
     signal.signal(signal.SIGINT, handle_signal)
 
     scheduler.start()
+    if audio_stream_server is not None:
+        audio_stream_server.start()
     log.info(
         "serving on http://%s:%s (POST /rnk/schedule)", Config.HOST, Config.PORT
     )
