@@ -124,7 +124,7 @@ TICK_BALANCE_THRESHOLD = 3
 TICK_BALANCE_GAIN = 0.02
 
 #: Maximum duty-cycle adjustment compensation may apply to either wheel.
-MAX_SPEED_CORRECTION = 0.3
+MAX_SPEED_CORRECTION = 0.4
 
 #: Tick divergence between wheels beyond which compensation is considered
 #: unable to keep up (e.g. a wheel is blocked or slipping on an obstacle).
@@ -133,7 +133,7 @@ STALL_DIVERGENCE_TICKS = 20
 #: How long (seconds) the trajectory may stay diverged beyond
 #: STALL_DIVERGENCE_TICKS, or either wheel may show no encoder progress
 #: at all, before the command is aborted as a stall/obstacle.
-STALL_TIMEOUT_S = 1.0
+STALL_TIMEOUT_S = 100.0
 
 
 def wheel_ticks_per_revolution() -> float:
