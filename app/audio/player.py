@@ -10,10 +10,17 @@ ALSA output device. ffmpeg is already a project dependency (see
 import logging
 import subprocess
 import threading
+import time
 
 from . import constants
 
 log = logging.getLogger(__name__)
+
+# aplay occasionally fails to open the ALSA device on the first try (seen in
+# the wild as "audio open error: Unknown error 524"), which looks transient -
+# a retry a moment later succeeds. Give it a few tries before giving up.
+RETRY_ATTEMPTS = 3
+RETRY_BACKOFF_S = 0.5
 
 
 class PlaybackError(RuntimeError):
@@ -26,7 +33,8 @@ def play_file(data: bytes, volume: float = constants.DEFAULT_VOLUME) -> None:
     Starting playback is fire-and-forget: decoding/playing happens on a
     background thread so the caller (an HTTP request handler) isn't held
     open for the audio's duration. Only failures to *launch* the pipeline
-    raise; failures during decode/playback itself are logged.
+    raise; failures during decode/playback itself are logged (after being
+    retried a few times, since they're often a transient ALSA hiccup).
 
     ``volume`` is a gain multiplier applied while decoding (1.0 = unchanged).
 
@@ -36,6 +44,15 @@ def play_file(data: bytes, volume: float = constants.DEFAULT_VOLUME) -> None:
     if not data:
         raise PlaybackError("audio data is empty")
 
+    decode, play = _spawn_pipeline(volume)
+
+    threading.Thread(
+        target=_feed_and_wait_with_retry, args=(decode, play, data, volume), daemon=True
+    ).start()
+
+
+def _spawn_pipeline(volume: float) -> tuple[subprocess.Popen, subprocess.Popen]:
+    """Start the ffmpeg decode -> aplay pipeline. Neither process is fed yet."""
     try:
         decode = subprocess.Popen(
             [
@@ -72,13 +89,26 @@ def play_file(data: bytes, volume: float = constants.DEFAULT_VOLUME) -> None:
         raise PlaybackError("aplay is not installed") from exc
 
     decode.stdout.close()  # let `play` see EOF/SIGPIPE once decode exits
-
-    threading.Thread(
-        target=_feed_and_wait, args=(decode, play, data), daemon=True
-    ).start()
+    return decode, play
 
 
-def _feed_and_wait(decode, play, data: bytes) -> None:
+def _feed_and_wait_with_retry(
+    decode: subprocess.Popen, play: subprocess.Popen, data: bytes, volume: float, attempt: int = 1
+) -> None:
+    if _feed_and_wait(decode, play, data) or attempt >= RETRY_ATTEMPTS:
+        return
+    log.warning("retrying audio playback (attempt %s/%s)", attempt + 1, RETRY_ATTEMPTS)
+    time.sleep(RETRY_BACKOFF_S)
+    try:
+        decode, play = _spawn_pipeline(volume)
+    except PlaybackError as exc:
+        log.error("could not retry audio playback: %s", exc)
+        return
+    _feed_and_wait_with_retry(decode, play, data, volume, attempt + 1)
+
+
+def _feed_and_wait(decode: subprocess.Popen, play: subprocess.Popen, data: bytes) -> bool:
+    """Feed ``data`` through the pipeline and wait for it to finish. Returns success."""
     try:
         decode.stdin.write(data)
     except BrokenPipeError:
@@ -89,7 +119,9 @@ def _feed_and_wait(decode, play, data: bytes) -> None:
     decode.wait()
     play.wait()
 
+    ok = True
     if decode.returncode != 0:
+        ok = False
         stderr = decode.stderr.read() if decode.stderr else b""
         log.error(
             "ffmpeg failed to decode audio (exit %s): %s",
@@ -97,9 +129,11 @@ def _feed_and_wait(decode, play, data: bytes) -> None:
             stderr.decode("utf-8", "replace").strip(),
         )
     if play.returncode != 0:
+        ok = False
         stderr = play.stderr.read() if play.stderr else b""
         log.error(
             "aplay failed to play audio (exit %s): %s",
             play.returncode,
             stderr.decode("utf-8", "replace").strip(),
         )
+    return ok
