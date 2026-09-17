@@ -26,7 +26,7 @@ WHEEL_DIAMETER_CM = 11.0
 #: Measure between the wheel axles. Used for rotation calculations:
 #: a full 360-degree turn makes each wheel travel one full circle of
 #: radius WHEEL_SEPARATION_CM / 2.
-WHEEL_SEPARATION_CM = 28.0
+WHEEL_SEPARATION_CM = 35.0
 
 # ---------------------------------------------------------------------------
 # Motor / drive parameters (CALIBRATE these to your motors)
