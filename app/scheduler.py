@@ -158,18 +158,20 @@ class CommandScheduler:
         log.info("motion errors reset")
 
     def pending(self) -> list:
-        """Snapshot of the queue (oldest first) plus the running command."""
+        """Snapshot of the queue (oldest first) plus the running command.
+
+        Reads the queue's backing deque directly while holding its mutex,
+        instead of dequeueing/re-enqueueing each item: that approach never
+        terminates without another thread draining the queue (net size
+        never shrinks) and races with the worker thread, which can
+        duplicate or reorder commands.
+        """
         items = []
         if self._current is not None:
             items.append({**self._current.to_dict(), "state": "running"})
-        q = self._queue
-        while True:
-            try:
-                cmd = q.get_nowait()
-            except queue.Empty:
-                break
-            items.append({**cmd.to_dict(), "state": "queued"})
-            q.put(cmd)
+        with self._queue.mutex:
+            queued = list(self._queue.queue)
+        items.extend({**cmd.to_dict(), "state": "queued"} for cmd in queued if cmd is not None)
         return items
 
     @property
